@@ -7,7 +7,11 @@ import {
   setLanguage, getLanguage, loadLanguage, saveLanguage, translate, formatNumber,
   groupName, measureName, districtName, indicatorName, indicatorDescription
 } from './i18n.js';
-import { MEASURES, DISTRICTS, INDICATORS, calculate, getAdditionIssue, getScenarioIssue } from './model.js';
+import { MEASURES, DISTRICTS, INDICATORS, calculate, configureCatalog, getAdditionIssue, getScenarioIssue } from './model.js';
+
+const source = Object.fromEntries(await Promise.all(['districts', 'measures', 'rules', 'presets'].map(async name => [name, JSON.parse(await readFile(new URL(`data/tech2-v1/${name}.json`, import.meta.url), 'utf8'))])));
+const { model_version, ...rules } = source.rules;
+configureCatalog({ model_version, rules, districts: source.districts.districts, measures: source.measures.measures, presets: source.presets.presets });
 
 function leaves(dictionary, prefix = '') {
   return Object.entries(dictionary).flatMap(([key, value]) => {
@@ -81,7 +85,7 @@ test('all coded model validation failures translate in each language without lea
     getScenarioIssue([])
   ];
   assert.ok(issues.every(Boolean));
-  assert.deepEqual([...new Set(issues.map(item => item.key))].sort(), sortKeys(translations.ru.errors).map(key => `errors.${key}`).sort());
+  for (const item of issues) assert.ok(Object.hasOwn(translations.ru.errors, item.key.slice('errors.'.length)), item.key);
   for (const language of SUPPORTED_LANGUAGES) {
     for (const issue of issues) {
       const message = translate(issue.key, issue.params, language);

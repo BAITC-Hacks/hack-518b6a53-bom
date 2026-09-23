@@ -13,6 +13,7 @@ let measureById = {};
 let districtById = {};
 let validationRequest = 0, evaluationRequest = 0, explanationRequest = 0;
 let validationController, evaluationController, explanationController;
+let explanationFlight = null;
 let narrativeSections = [], narrativePages = [];
 let paginationFrame;
 let toastTimer;
@@ -98,8 +99,8 @@ function apiIssue(error) {
     BUDGET_EXCEEDED: 'errors.budget', DIRECTION_LIMIT: 'errors.groupLimit',
     INCOMPATIBLE_MEASURES: 'network.conflict', DISTRICT_CONFLICT: 'network.conflict',
     MODEL_VERSION_MISMATCH: 'network.versionChanged', MODEL_VERSION_CONFLICT: 'network.versionChanged',
-    DATASET_UNAVAILABLE: 'network.unavailable', NETWORK_ERROR: 'network.unavailable',
-    TIMEOUT: 'network.timeout', REQUEST_TIMEOUT: 'network.timeout'
+    DATASET_UNAVAILABLE: 'network.unavailable', DATASET_NOT_READY: 'network.unavailable', API_UNAVAILABLE: 'network.unavailable', NETWORK_ERROR: 'network.unavailable',
+    TIMEOUT: 'network.timeout', API_TIMEOUT: 'network.timeout', REQUEST_TIMEOUT: 'network.timeout'
   };
   return { key: keys[code] || (error?.status === 409 ? 'network.versionChanged' : 'network.requestFailed'), params: { count: code === 'DIRECTION_LIMIT' ? RULES?.max_per_direction : REQUIRED_DECISIONS, budget: BUDGET } };
 }
@@ -108,6 +109,7 @@ function invalidateResult() {
   explanationRequest++;
   evaluationController?.abort();
   explanationController?.abort();
+  explanationFlight = null;
   state.evaluating = false;
   state.evaluation = null;
   state.result = null;
@@ -222,7 +224,7 @@ function renderMap() {
   $$('.district-score').forEach(element => { element.textContent = format(districtResult(result, element.dataset.scoreFor).score); });
   const center = district ? project(MAP_DISTRICTS.find(item => item.id === district.id).centroid) : null;
   const zoom = district ? 1.85 : 1;
-  $('#mapCamera').style.transform = center ? `translate(${450 - center.x * zoom}px, ${350 - center.y * zoom}px) scale(${zoom})` : 'translate(0px, 0px) scale(1)';
+  $('#mapCamera').style.transform = center ? `translate(${430 - center.x * zoom}px, ${340 - center.y * zoom}px) scale(${zoom})` : 'translate(0px, 0px) scale(1)';
   renderScenarioObjects();
   renderIndicators(result);
 }
@@ -385,7 +387,17 @@ function paginateNarrative() {
         else high = count - 1;
       }
       if (!low && page) { pages.push(page); page = ''; continue; }
-      const count = Math.max(1, low);
+      if (low < words.length - offset && page) {
+        host.innerHTML = fragment(section.title, words.slice(offset));
+        if (host.scrollHeight <= host.clientHeight) { pages.push(page); page = ''; continue; }
+      }
+      let count = Math.max(1, low);
+      // Prefer a sentence or list boundary over splitting a numeric comparison.
+      if (offset + count < words.length) {
+        for (let boundary = count; boundary > count * .55; boundary--) {
+          if (/[,.;!?]$/u.test(words[offset + boundary - 1])) { count = boundary; break; }
+        }
+      }
       page += fragment(section.title, words.slice(offset, offset + count));
       offset += count;
       if (offset < words.length) { pages.push(page); page = ''; }
@@ -450,31 +462,42 @@ async function openReport() {
 async function requestExplanation(force = false) {
   if (!state.evaluation) return;
   const language = getLanguage();
-  explanationController?.abort();
-  const request = ++explanationRequest;
+  const scenarioKey = state.evaluation.scenario_key;
+  if (force) delete state.explanations[language];
   if (state.explanations[language] && !force) {
     state.aiStatus = 'ready';
     renderReportContent();
     return;
   }
-  delete state.explanations[language];
+  // Back/return and language switches share the active request. The next
+  // requested language starts after it settles, preserving the API's AI slot.
+  if (explanationFlight?.scenarioKey === scenarioKey) {
+    state.aiStatus = 'loading';
+    renderReportContent();
+    return;
+  }
+  const request = ++explanationRequest;
+  explanationFlight = { scenarioKey, language, request };
   explanationController = new AbortController();
-  const scenarioKey = state.evaluation.scenario_key;
   state.aiStatus = 'loading';
   state.aiError = null;
   renderReportContent();
   try {
     const result = await explainScenario(state.decisions, language, { signal: explanationController.signal });
-    if (request !== explanationRequest || scenarioKey !== state.evaluation?.scenario_key || language !== getLanguage()) return;
+    if (request !== explanationRequest || scenarioKey !== state.evaluation?.scenario_key) return;
     if (result.scenario_key !== scenarioKey || result.language !== language) throw new Error('Mismatched explanation');
     state.explanations[language] = result;
-    state.aiStatus = 'ready';
+    if (language === getLanguage()) state.aiStatus = 'ready';
   } catch (error) {
     if (request !== explanationRequest || error.name === 'AbortError') return;
-    state.aiStatus = 'error';
-    state.aiError = apiIssue(error);
+    if (language === getLanguage()) { state.aiStatus = 'error'; state.aiError = apiIssue(error); }
+  } finally {
+    if (explanationFlight?.request === request) explanationFlight = null;
   }
-  if (request === explanationRequest) renderReportContent();
+  if (request === explanationRequest) {
+    if (language !== getLanguage() && !$('#reportView').classList.contains('hidden')) void requestExplanation();
+    else renderReportContent();
+  }
 }
 
 function localizeShell() {

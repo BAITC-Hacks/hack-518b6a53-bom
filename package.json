@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test:parity": "node tests/parity.mjs"
   },
   "engines": { "node": ">=22" }
 }

@@ -1,5 +1,6 @@
 """HTTP transport for the loaded Tech2 scenario service."""
 
+import asyncio
 from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
 from typing import Any
@@ -109,11 +110,29 @@ def evaluate(body: ScenarioRequest, service: ScenarioService | JSONResponse = De
 
 
 @router.post("/api/v1/explain", response_model=ExplainResponse)
-async def explain(body: ExplainRequest, service: ExplanationService | JSONResponse = Depends(explanation_service)) -> Any:
+async def explain(
+    body: ExplainRequest, request: Request,
+    service: ExplanationService | JSONResponse = Depends(explanation_service),
+) -> Any:
     if isinstance(service, JSONResponse):
         return service
+
+    async def wait_for_disconnect() -> None:
+        # FastAPI has already consumed the body. Only an actual disconnect
+        # ends the request; a final/empty http.request message does not.
+        while True:
+            message = await request.receive()
+            if message["type"] == "http.disconnect":
+                return
+
+    operation = asyncio.create_task(service.explain(body.model_version, _selections(body), body.language))
+    disconnect = asyncio.create_task(wait_for_disconnect())
     try:
-        return await service.explain(body.model_version, _selections(body), body.language)
+        done, _ = await asyncio.wait((operation, disconnect), return_when=asyncio.FIRST_COMPLETED)
+        if operation in done:
+            return await operation
+        await disconnect
+        return error_response(499, "CLIENT_DISCONNECTED", "Соединение с клиентом закрыто")
     except ModelVersionMismatch:
         return error_response(409, "MODEL_VERSION_MISMATCH", "Неизвестная версия модели", "model_version")
     except InvalidScenario as exc:
@@ -121,6 +140,13 @@ async def explain(body: ExplainRequest, service: ExplanationService | JSONRespon
             status_code=422,
             content=ErrorResponse(errors=to_plain(exc.errors), score=None).model_dump(),
         )
+    finally:
+        # Await cancellation so the adapter releases its single slot before
+        # this request finishes, including cancellation of the ASGI handler.
+        for task in (operation, disconnect):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(operation, disconnect, return_exceptions=True)
 
 
 @router.get("/health/live", response_model=LiveHealthResponse)

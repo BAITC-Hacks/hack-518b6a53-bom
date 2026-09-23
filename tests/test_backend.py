@@ -135,14 +135,23 @@ class BackendHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(self.lifespan.__aexit__, None, None, None)
         self.payload = request_payload(app.state.scenario_service)
 
-    async def request(self, method: str, path: str, payload: dict | None = None):
+    async def request(
+        self, method: str, path: str, payload: dict | None = None,
+        disconnect: asyncio.Event | None = None,
+    ):
         body = json.dumps(payload).encode() if payload is not None else b""
         messages = []
         received = False
+        disconnected = disconnect if disconnect is not None else asyncio.Event()
+        final_body_received = False
 
         async def receive():
-            nonlocal received
+            nonlocal received, final_body_received
             if received:
+                if not final_body_received:
+                    final_body_received = True
+                    return {"type": "http.request", "body": b"", "more_body": False}
+                await disconnected.wait()
                 return {"type": "http.disconnect"}
             received = True
             return {"type": "http.request", "body": body, "more_body": False}
@@ -226,6 +235,64 @@ class BackendHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status, 200)
         self.assertEqual(len(result["districts"]), 5)
         self.assertEqual(len(result["measures"]), 14)
+
+    async def test_consumed_body_does_not_cancel_slow_explanation(self):
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def parse(**kwargs):
+            entered.set()
+            await release.wait()
+            return provider_response()
+
+        adapter = OpenAIExplanationAdapter(
+            Settings(DATA_DIR, "INFO", "test-key", "test-model", 45, 2000),
+            SimpleNamespace(responses=SimpleNamespace(parse=parse)),
+        )
+        app.state.explanation_service = ExplanationService(app.state.scenario_service, adapter)
+        pending = asyncio.create_task(self.request("POST", "/api/v1/explain", {
+            **self.payload, "language": "en",
+        }))
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=1)
+            await asyncio.sleep(0)
+            self.assertFalse(pending.done())
+        finally:
+            release.set()
+            status, result = await asyncio.wait_for(pending, timeout=1)
+        self.assertEqual((status, result["mode"], result["language"]), (200, "llm", "en"))
+
+    async def test_disconnect_cancels_provider_and_releases_slot(self):
+        entered, cancelled, disconnected = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+        async def slow_parse(**kwargs):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        parse = AsyncMock(side_effect=slow_parse)
+        adapter = OpenAIExplanationAdapter(
+            Settings(DATA_DIR, "INFO", "test-key", "test-model", 45, 2000),
+            SimpleNamespace(responses=SimpleNamespace(parse=parse)),
+        )
+        app.state.explanation_service = ExplanationService(app.state.scenario_service, adapter)
+        pending = asyncio.create_task(self.request(
+            "POST", "/api/v1/explain", self.payload, disconnect=disconnected,
+        ))
+        try:
+            await asyncio.wait_for(entered.wait(), timeout=1)
+        finally:
+            disconnected.set()
+            status, result = await asyncio.wait_for(pending, timeout=1)
+        self.assertEqual((status, result["errors"][0]["code"]), (499, "CLIENT_DISCONNECTED"))
+        self.assertTrue(cancelled.is_set())
+        self.assertEqual(adapter.health().last_status, "not_checked")
+        parse.side_effect = None
+        parse.return_value = provider_response()
+        status, result = await self.request("POST", "/api/v1/explain", {**self.payload, "language": "en"})
+        self.assertEqual((status, result["mode"], result["language"]), (200, "llm", "en"))
 
 
 class OpenAIAdapterTests(unittest.IsolatedAsyncioTestCase):

@@ -382,6 +382,9 @@ html,body{height:100%;overflow:hidden}.app-shell{height:100svh;min-height:0}.wor
 .report-actions { gap: 5px; margin-top: 8px; }
 .report-actions > span { padding: 6px 8px; font-size: 10px; }
 .report-actions small { font-size: 9px; }
+@media (min-width: 761px) and (max-height: 840px) {
+  .map-stage { top: 76px; bottom: 16px; }
+}
 @media (min-width: 761px) and (max-height: 800px) {
   .report-view { padding: 16px; gap: 10px; }
   .report-hero { padding: 12px 20px; }
