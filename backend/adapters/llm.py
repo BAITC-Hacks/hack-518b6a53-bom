@@ -77,35 +77,32 @@ class OpenAIExplanationAdapter:
                 self._record(False)
                 return ExplanationFailure(ExplanationFailureReason.AI_UNAVAILABLE)
 
-            if response.status != "completed":
-                self._record(False)
-                return ExplanationFailure(ExplanationFailureReason.AI_INVALID_RESPONSE)
-            if any(
-                content.type == "refusal"
-                for item in response.output if item.type == "message"
-                for content in item.content
-            ):
-                self._record(False)
-                return ExplanationFailure(ExplanationFailureReason.AI_INVALID_RESPONSE)
-
-            parsed = response.output_parsed
-            if parsed is None or not isinstance(response.model, str) or not response.model.strip():
-                self._record(False)
-                return ExplanationFailure(ExplanationFailureReason.AI_INVALID_RESPONSE)
             try:
+                if response.status != "completed":
+                    raise ValueError("Incomplete provider response")
+                if any(
+                    content.type == "refusal"
+                    for item in response.output if item.type == "message"
+                    for content in item.content
+                ):
+                    raise ValueError("Provider refused the request")
+                parsed = response.output_parsed
+                model = response.model
+                if parsed is None or not isinstance(model, str) or not model.strip():
+                    raise ValueError("Missing parsed output or model")
                 explanation = ExplanationSchema.model_validate(parsed.model_dump())
-            except (ValidationError, AttributeError, TypeError):
-                self._record(False)
-                return ExplanationFailure(ExplanationFailureReason.AI_INVALID_RESPONSE)
-            if not explanation.summary.strip() or any(
-                not item.strip()
-                for group in (explanation.strengths, explanation.risks, explanation.recommendations)
-                for item in group
-            ):
+                if not explanation.summary.strip() or any(
+                    not item.strip()
+                    for group in (explanation.strengths, explanation.risks, explanation.recommendations)
+                    for item in group
+                ):
+                    raise ValueError("Empty explanation field")
+            except Exception:
+                # Malformed provider objects may fail at any field access or schema check.
                 self._record(False)
                 return ExplanationFailure(ExplanationFailureReason.AI_INVALID_RESPONSE)
             self._record(True)
-            return ExplanationSuccess(explanation, response.model)
+            return ExplanationSuccess(explanation, model)
         finally:
             async with self._slot_lock:
                 self._occupied = False
