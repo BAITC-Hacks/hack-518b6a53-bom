@@ -290,55 +290,62 @@ html,body{height:100%;overflow:hidden}.app-shell{height:100svh;min-height:0}.wor
 }
 .measure-scope--city { border-color: #e5ca81; background: #fff3cf; color: #795711; }
 .measure-scope img { display: block; width: 18px; height: 18px; }
+/* Center the language control on the whole workspace, independently of the map. */
+.workspace { position: relative; }
 .language-switcher {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
-  gap: 3px;
-  width: max-content;
-  padding: 4px;
+  gap: 4px;
+  width: 222px;
+  padding: 5px;
   border: 1px solid #d6e7f2;
-  border-radius: 12px;
-  background: #ffffffd9;
-  box-shadow: 0 3px 14px #23567808;
+  border-radius: 18px;
+  background: #ffffffed;
+  box-shadow: 0 6px 20px #2356780a;
 }
 .language-switcher button {
-  min-width: 32px;
-  min-height: 30px;
-  padding: 5px 6px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 12px;
   background: transparent;
   color: #37617b;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   line-height: 1;
-  transition: color .18s ease, background-color .18s ease;
 }
-.language-switcher button:hover { background: #fff3cf; color: #795711; }
 .language-switcher button[aria-pressed="true"] { background: #1674a5; color: #fff; }
-.map-language { position: absolute; top: 27px; right: 0; z-index: 4; }
+.map-language { position: absolute; top: 24px; left: 50%; transform: translateX(-50%); z-index: 4; }
 .report-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
 .report-head .back-button { justify-self: start; }
 .report-head .text-button { justify-self: end; }
 @media (min-width: 1280px) {
-  .map-language { top: 24px; }
-  .language-switcher button { min-width: 36px; min-height: 34px; font-size: 12px; }
+  .map-language { top: var(--desktop-padding); }
+  .language-switcher { width: 240px; }
+  .language-switcher button { min-height: 46px; }
 }
-@media (min-width: 481px) and (max-width: 760px) {
-  .map-language { top: 10px; right: 78px; }
+@media (min-width: 1101px) and (max-height: 800px) {
+  .map-language { top: 16px; }
 }
-@media (min-width: 481px) and (max-width: 560px) {
-  .map-language { top: 58px; left: 0; right: auto; }
-  .map-stage { top: 105px; }
+@media (max-width: 1100px) {
+  .workspace { padding-top: 80px; }
+  .map-language { top: 12px; }
 }
-@media (max-width: 600px) {
+@media (max-width: 760px) {
+  .workspace { padding-top: 76px; }
+  .pulse-space { top: 80px; }
+}
+@media (max-width: 680px) {
   .report-head { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
-  .report-head .language-switcher { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
-  .report-head .text-button { grid-column: 2; grid-row: 1; }
+  .report-head .language-switcher { grid-column: 1 / -1; grid-row: 1; justify-self: center; }
+  .report-head .back-button { grid-column: 1; grid-row: 2; }
+  .report-head .text-button { grid-column: 2; grid-row: 2; }
 }
 @media (max-width: 480px) {
-  .map-language { top: 7px; right: 76px; }
-  .language-switcher button { min-width: 30px; min-height: 28px; }
+  .workspace { padding-top: 73px; }
+  .map-stage { top: 65px; }
 }
 .report-head .back-button,
 .report-head .text-button {

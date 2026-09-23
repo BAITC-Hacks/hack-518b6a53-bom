@@ -10,6 +10,11 @@
 <body>
   <div class="app-shell">
     <main class="workspace" id="planningView">
+      <div class="language-switcher map-language" role="group" aria-label="Язык интерфейса" data-i18n-aria="ui.language">
+        <button type="button" data-language="ru" lang="ru" title="Русский" aria-label="Русский" aria-pressed="true">RU</button>
+        <button type="button" data-language="kk" lang="kk" title="Қазақша" aria-label="Қазақша" aria-pressed="false">ҚАЗ</button>
+        <button type="button" data-language="en" lang="en" title="English" aria-label="English" aria-pressed="false">EN</button>
+      </div>
       <aside class="catalog panel">
         <div class="panel-heading"><h1 data-i18n="ui.measures">Мероприятия</h1><span class="subtle-count">14</span></div>
         <div class="catalog-tools">
@@ -27,11 +32,6 @@
 
       <section class="map-region" id="mapCard" aria-label="Карта районов Астаны" data-i18n-aria="ui.mapLabel">
         <div class="map-place"><strong data-i18n="ui.cityName">Астана</strong><span id="mapScope">5 районов</span></div>
-        <div class="language-switcher map-language" role="group" aria-label="Язык интерфейса" data-i18n-aria="ui.language">
-          <button type="button" data-language="ru" lang="ru" title="Русский" aria-label="Русский" aria-pressed="true">RU</button>
-          <button type="button" data-language="kk" lang="kk" title="Қазақша" aria-label="Қазақша" aria-pressed="false">ҚАЗ</button>
-          <button type="button" data-language="en" lang="en" title="English" aria-label="English" aria-pressed="false">EN</button>
-        </div>
         <div class="map-stage" id="mapStage">
           <svg id="cityMap" class="city-map" viewBox="0 0 900 700" role="group" aria-label="Изометрическая карта районов Астаны" data-i18n-aria="ui.mapIsometric"><g id="mapCamera"></g></svg>
         </div>
