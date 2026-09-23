@@ -7,10 +7,13 @@ from typing import Any, AsyncIterator
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from openai import AsyncOpenAI
 
 from backend.adapters.dataset import load_dataset
+from backend.adapters.llm import OpenAIExplanationAdapter
 from backend.domain.simulation import simulate
 from backend.routes import error_response, router
+from backend.services.explanations import ExplanationService
 from backend.services.scenarios import ScenarioService
 from backend.settings import load_settings
 
@@ -69,7 +72,7 @@ class ReadinessGateMiddleware:
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] == "http" and scope.get("path") in {
-            "/api/v1/catalog", "/api/v1/validate", "/api/v1/evaluate",
+            "/api/v1/catalog", "/api/v1/validate", "/api/v1/evaluate", "/api/v1/explain",
         } and getattr(scope["app"].state, "scenario_service", None) is None:
             await error_response(503, "DATASET_NOT_READY", "Данные модели не готовы")(scope, receive, send)
             return
@@ -79,15 +82,32 @@ class ReadinessGateMiddleware:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.scenario_service = None
+    app.state.explanation_service = None
+    settings = load_settings()
+    client = (
+        AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url="https://api.openai.com/v1",
+            max_retries=0,
+        )
+        if settings.ai_configured else None
+    )
+    adapter = OpenAIExplanationAdapter(settings, client)
+    app.state.ai_adapter = adapter
     try:
-        settings = load_settings()
         dataset = load_dataset(settings.data_dir)
         baseline = simulate(dataset, ())
         app.state.scenario_service = ScenarioService(dataset, baseline)
+        app.state.explanation_service = ExplanationService(app.state.scenario_service, adapter)
     except Exception:
         logger.exception("Dataset or baseline initialization failed")
-    yield
-    app.state.scenario_service = None
+    try:
+        yield
+    finally:
+        app.state.explanation_service = None
+        app.state.scenario_service = None
+        if client is not None:
+            await client.close()
 
 
 app = FastAPI(lifespan=lifespan)

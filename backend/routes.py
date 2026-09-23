@@ -8,9 +8,10 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from backend.domain.models import Selection
+from backend.services.explanations import ExplanationService
 from backend.services.scenarios import InvalidScenario, ModelVersionMismatch, ScenarioService
 from shared.schemas import (
-    CatalogResponse, ErrorResponse, EvaluateResponse, LiveHealthResponse,
+    AIHealthResponse, CatalogResponse, ErrorResponse, EvaluateResponse, ExplainResponse, LiveHealthResponse,
     ReadyHealthResponse, ScenarioRequest, ValidateResponse,
 )
 
@@ -43,6 +44,13 @@ def to_plain(value: Any) -> Any:
 
 def scenario_service(request: Request) -> ScenarioService | JSONResponse:
     service = getattr(request.app.state, "scenario_service", None)
+    if service is None:
+        return error_response(503, "DATASET_NOT_READY", "Данные модели не готовы")
+    return service
+
+
+def explanation_service(request: Request) -> ExplanationService | JSONResponse:
+    service = getattr(request.app.state, "explanation_service", None)
     if service is None:
         return error_response(503, "DATASET_NOT_READY", "Данные модели не готовы")
     return service
@@ -100,6 +108,21 @@ def evaluate(body: ScenarioRequest, service: ScenarioService | JSONResponse = De
     return EvaluateResponse.model_validate(to_plain(report))
 
 
+@router.post("/api/v1/explain", response_model=ExplainResponse)
+async def explain(body: ScenarioRequest, service: ExplanationService | JSONResponse = Depends(explanation_service)) -> Any:
+    if isinstance(service, JSONResponse):
+        return service
+    try:
+        return await service.explain(body.model_version, _selections(body))
+    except ModelVersionMismatch:
+        return error_response(409, "MODEL_VERSION_MISMATCH", "Неизвестная версия модели", "model_version")
+    except InvalidScenario as exc:
+        return JSONResponse(
+            status_code=422,
+            content=ErrorResponse(errors=to_plain(exc.errors), score=None).model_dump(),
+        )
+
+
 @router.get("/health/live", response_model=LiveHealthResponse)
 def live() -> LiveHealthResponse:
     return LiveHealthResponse(status="live")
@@ -110,3 +133,11 @@ def ready(request: Request) -> ReadyHealthResponse | JSONResponse:
     if getattr(request.app.state, "scenario_service", None) is None:
         return JSONResponse(status_code=503, content=ReadyHealthResponse(status="not_ready").model_dump())
     return ReadyHealthResponse(status="ready")
+
+
+@router.get("/health/ai", response_model=AIHealthResponse)
+def ai_health(request: Request) -> AIHealthResponse | JSONResponse:
+    health = request.app.state.ai_adapter.health()
+    if not health.configured or health.last_status == "error":
+        return JSONResponse(status_code=503, content=health.model_dump())
+    return health
