@@ -27,6 +27,11 @@ def error_response(status_code: int, code: str, message: str, path: str = "") ->
 
 def to_plain(value: Any) -> Any:
     """Copy immutable domain objects into data accepted by HTTP schemas."""
+    if isinstance(value, Selection):
+        result = {"measure_id": value.measure_id}
+        if value.district_id is not None:
+            result["district_id"] = value.district_id
+        return result
     if is_dataclass(value) and not isinstance(value, type):
         return {field.name: to_plain(getattr(value, field.name)) for field in fields(value)}
     if isinstance(value, Mapping):
