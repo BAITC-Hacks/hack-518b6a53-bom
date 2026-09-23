@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f5f0">
+  <title>5 часов акимом — симулятор Астаны</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand" aria-label="5 часов акимом">
+        <span class="brand-symbol">5<span class="brand-star">✳</span></span>
+        <span class="brand-copy"><strong>ЧАСОВ АКИМОМ</strong><small>СИМУЛЯТОР ГОРОДА</small></span>
+      </div>
+      <div class="topbar-center"><span class="live-dot"></span> АСТАНА · СЦЕНАРИЙ 01 <span class="topbar-separator">/</span> ПЛАНИРОВАНИЕ</div>
+      <div class="topbar-actions"><span class="simulation-badge">ДЕМО · БЕЗ БЭКЕНДА</span><button class="icon-button" id="helpButton" type="button" aria-label="Как это работает">?</button></div>
+    </header>
+
+    <main class="workspace" id="planningView">
+      <aside class="catalog panel">
+        <div class="panel-heading">
+          <span class="eyebrow">01 / КАТАЛОГ ИНИЦИАТИВ</span>
+          <h1>Измените<br><em>город.</em></h1>
+          <p>Перетащите карточку на район или на весь город. Можно также выбрать её нажатием.</p>
+        </div>
+        <div class="catalog-tools">
+          <label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="searchInput" type="search" placeholder="Поиск мероприятия" aria-label="Поиск мероприятия"></label>
+          <div class="filter-row" id="filterRow" aria-label="Направления">
+            <button class="filter-chip active" data-filter="Все" type="button">Все <span>14</span></button>
+            <button class="filter-chip" data-filter="Транспорт" type="button">Транспорт</button>
+            <button class="filter-chip" data-filter="Экология" type="button">Экология</button>
+            <button class="filter-chip" data-filter="Соцсфера" type="button">Соцсфера</button>
+            <button class="filter-chip" data-filter="Безопасность" type="button">Безопасность</button>
+            <button class="filter-chip" data-filter="Сервисы" type="button">Сервисы</button>
+          </div>
+        </div>
+        <div class="catalog-list" id="catalogList"></div>
+        <div class="catalog-foot"><span class="drag-glyph">↗</span><span>Мера заработает с учётом лага.<br>Горизонт прогноза — 8 кварталов.</span></div>
+      </aside>
+
+      <section class="map-column">
+        <div class="section-head"><div><span class="eyebrow">02 / КАРТА ВЛИЯНИЯ</span><h2>Ваша Астана, <em>через два года.</em></h2></div><div class="map-head-actions"><span class="map-legend-dot"></span> ПОКАЗАТЕЛИ 0–100 <button id="resetMapButton" class="text-button" type="button">Сбросить фокус ↗</button></div></div>
+        <div class="map-card" id="mapCard">
+          <div class="map-topline"><span>ИНТЕРАКТИВНАЯ МОДЕЛЬ</span><span>51°10′ N · 71°26′ E</span></div>
+          <button id="orbButton" class="orb-widget" type="button" aria-expanded="false" aria-controls="indicatorPanel">
+            <span class="orb-ring"><span class="orb-inner"><small id="orbScope">ASTANA SCORE</small><strong id="orbScore">52.56</strong><span id="orbChange">БАЗОВЫЙ УРОВЕНЬ</span></span></span>
+            <span class="orb-caption"><strong id="orbTitle">Пульс города</strong><small>Нажмите для показателей <span>↗</span></small></span>
+          </button>
+          <div class="score-note" id="scoreNote"><span class="note-spark">✦</span> <span>Самый слабый район влияет на общий балл.</span></div>
+          <div class="map-stage" id="mapStage">
+            <svg id="cityMap" class="city-map" viewBox="0 0 760 570" role="img" aria-label="Схематичная карта пяти районов Астаны">
+              <defs>
+                <pattern id="mapDots" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#c7d4cc" opacity=".55"/></pattern>
+                <filter id="softShadow"><feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#2d473a" flood-opacity=".11"/></filter>
+              </defs>
+              <rect width="760" height="570" fill="url(#mapDots)" opacity=".52"/>
+              <path class="river river-back" d="M245 45 C312 83 325 145 355 199 C380 244 356 283 383 314 C423 360 435 398 432 450 C425 502 474 534 520 560"/>
+              <path class="river" d="M245 45 C312 83 325 145 355 199 C380 244 356 283 383 314 C423 360 435 398 432 450 C425 502 474 534 520 560"/>
+              <g class="district" data-district="nura" tabindex="0" role="button" aria-label="Район Нура">
+                <path class="district-shape" d="M105 106 L184 63 L252 67 L303 91 L345 149 L358 214 L316 263 L254 243 L199 263 L128 242 L90 181 Z"/>
+                <path class="district-road" d="M118 170 L235 143 L319 195 M177 88 L198 248 M270 81 L278 244"/>
+                <text class="district-label" x="211" y="181">НУРА</text><text class="district-score" x="211" y="205" data-score-for="nura">49.18</text>
+              </g>
+              <g class="district" data-district="esil" tabindex="0" role="button" aria-label="Район Есиль">
+                <path class="district-shape" d="M128 252 L200 273 L252 252 L316 273 L348 246 L365 317 L405 370 L390 430 L336 467 L296 531 L205 516 L126 477 L84 412 L94 331 Z"/>
+                <path class="district-road" d="M111 355 L333 331 M129 427 L374 401 M204 285 L249 511 M310 278 L303 465"/>
+                <text class="district-label" x="243" y="382">ЕСИЛЬ</text><text class="district-score" x="243" y="406" data-score-for="esil">62.99</text>
+              </g>
+              <g class="district" data-district="saryarka" tabindex="0" role="button" aria-label="Район Сарыарка">
+                <path class="district-shape" d="M373 103 L451 82 L522 95 L567 128 L578 203 L547 246 L473 262 L401 249 L367 210 L356 145 Z"/>
+                <path class="district-road" d="M394 121 L530 208 M412 229 L535 122 M457 89 L483 253"/>
+                <text class="district-label" x="467" y="166">САРЫАРКА</text><text class="district-score" x="467" y="191" data-score-for="saryarka">54.65</text>
+              </g>
+              <g class="district" data-district="baikonur" tabindex="0" role="button" aria-label="Район Байконур">
+                <path class="district-shape" d="M403 269 L476 277 L554 258 L603 285 L629 358 L596 418 L532 447 L456 429 L416 371 L379 316 Z"/>
+                <path class="district-road" d="M405 319 L596 361 M461 280 L494 421 M555 270 L550 418"/>
+                <text class="district-label" x="504" y="349">БАЙКОНУР</text><text class="district-score" x="504" y="374" data-score-for="baikonur">56.63</text>
+              </g>
+              <g class="district" data-district="almaty" tabindex="0" role="button" aria-label="Район Алматы">
+                <path class="district-shape" d="M419 446 L456 443 L528 461 L597 431 L649 467 L678 518 L604 548 L526 537 L481 551 L421 522 L385 473 Z"/>
+                <path class="district-road" d="M418 478 L626 494 M490 456 L519 535 M588 441 L574 539"/>
+                <text class="district-label" x="535" y="496">АЛМАТЫ</text><text class="district-score" x="535" y="520" data-score-for="almaty">57.06</text>
+              </g>
+              <path class="river river-front" d="M245 45 C312 83 325 145 355 199 C380 244 356 283 383 314 C423 360 435 398 432 450 C425 502 474 534 520 560"/>
+              <text class="river-label" x="348" y="315" transform="rotate(63 348 315)">РЕКА ЕСИЛЬ</text>
+              <circle class="map-pin" cx="365" cy="283" r="7"/><circle class="map-pin-inner" cx="365" cy="283" r="2.5"/>
+            </svg>
+            <div class="city-drop" id="cityDrop" data-city-drop="true"><span class="city-drop-icon">＋</span><span><strong>Весь город</strong><small>Для городских мер</small></span></div>
+            <div class="map-compass">N <span>↑</span></div>
+            <div class="map-scale">0 <span></span> 5 КМ</div>
+          </div>
+          <div class="drop-preview hidden" id="dropPreview" aria-live="polite"></div>
+          <div class="indicator-panel hidden" id="indicatorPanel"></div>
+          <div class="map-bottomline"><span><i></i> Нажмите на район, чтобы увидеть локальные данные</span><span>СХЕМА · НЕ ГЕОГРАФИЧЕСКАЯ КАРТА</span></div>
+        </div>
+        <div class="map-footer"><div class="foot-insight"><span class="insight-icon">↗</span><div><strong>Сценарий в реальном времени</strong><span>Прогноз обновляется при выборе мероприятий. Итог фиксируется после расчёта.</span></div></div><div class="horizon"><span>ГОРИЗОНТ</span><strong>8 кварталов</strong><small>2 условных года</small></div></div>
+      </section>
+
+      <aside class="plan panel">
+        <div class="plan-top"><span class="eyebrow">03 / ВАШИ РЕШЕНИЯ</span><h2>План действий<span class="count-pill" id="decisionCount">0 / 5</span></h2><p>Пять решений, один бюджет и последствия для каждого района.</p></div>
+        <div class="budget-block"><div class="budget-line"><span>Виртуальный бюджет</span><strong><span id="spentValue">0</span> / 100 <small>ед.</small></strong></div><div class="budget-track"><span id="budgetFill"></span></div><div class="budget-left"><span>ОСТАЛОСЬ</span><strong id="remainingValue">100 ед.</strong></div></div>
+        <div class="plan-label"><span>ВЫБРАННЫЕ МЕРЫ</span><span id="slotHint">5 СВОБОДНЫХ МЕСТ</span></div>
+        <div class="decision-list" id="decisionList"></div>
+        <div class="plan-bottom"><div class="status-message" id="statusMessage"><span>✦</span> Выберите карточку и укажите район на карте.</div><button class="calculate-button" id="calculateButton" type="button" disabled><span>Рассчитать сценарий</span><span>↗</span></button><p class="plan-disclaimer">Расчёт по формуле датасета · отчёт — демо</p></div>
+      </aside>
+    </main>
+
+    <main class="report-view hidden" id="reportView">
+      <div class="report-head"><button id="backButton" class="back-button" type="button">← Вернуться к карте</button><span class="eyebrow">СЦЕНАРИЙ 01 / ИТОГОВЫЙ ОТЧЁТ</span><button id="restartButton" class="text-button" type="button">Новый сценарий ↗</button></div>
+      <div class="report-hero"><div><span class="report-kicker"><span class="live-dot"></span> ПРОГНОЗ НА 8 КВАРТАЛОВ</span><h1>Что изменится<br>в <em>Астане?</em></h1><p>Пять решений превращаются в измеримый сценарий для города и каждого района.</p></div><div class="report-score"><span>ASTANA QUALITY OF LIFE SCORE</span><strong id="reportScore">—</strong><small id="reportDelta">—</small><div>Базовый уровень <b>52.56</b></div></div></div>
+      <div class="report-tabs" id="reportTabs"></div>
+      <div id="reportContent" class="report-content"></div>
+      <div class="report-footnote">Демо-отчёт сформирован локально по рассчитанным значениям. LLM и сервер не подключены.</div>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <dialog id="helpDialog" class="help-dialog"><button class="help-close" id="closeHelpButton" type="button" aria-label="Закрыть">×</button><span class="eyebrow">КАК ЭТО РАБОТАЕТ</span><h2>Пять решений для города</h2><p>Выберите карточку и нажмите на район, либо перетащите её на карту. Городские меры отправляйте в зону «Весь город».</p><ol><li>Уложитесь в 100 условных единиц.</li><li>Выберите ровно 5 разных мер, не более двух из одного направления.</li><li>Нажмите «Рассчитать сценарий», чтобы увидеть результат и отчёт по районам.</li></ol><p>Индикаторы идут по шкале 0–100: чем больше, тем лучше. Эффект мер учитывает лаг на горизонте 8 кварталов.</p></dialog>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
