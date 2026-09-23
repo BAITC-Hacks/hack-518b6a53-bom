@@ -45,3 +45,11 @@
 - Публичные интерфейсы: ASGI-приложение `backend.main:app`; `ScenarioService.validate_draft(model_version, selections)` и `ScenarioService.evaluate(model_version, selections)`; маршруты `GET /api/v1/catalog`, `POST /api/v1/validate`, `POST /api/v1/evaluate`, `GET /health/live`, `GET /health/ready`.
 - Фактически выполненные проверки: чтение требований, существующего кода и исходного `git diff`; просмотр изменённых файлов и `git diff --check`. После уточнения преобразования повторно сопоставлены `SelectionSchema`, контракт и diff; выполнен `git diff --check`. Тесты и приложение не запускались.
 - Ограничения: OpenAI и explain относятся к следующим этапам; API не проверен исполнением. Для локального запуска вне контейнера требуется указать `DATA_DIR`, поскольку значение по умолчанию — `/app/data/tech2-v1`.
+
+## Этап 6 — факты и шаблонное объяснение
+
+- Добавлены `backend/services/explanations.py`, `backend/adapters/fallback.py` и `backend/prompts/explanation.txt`. Сервис вызывает окончательную проверку и расчёт через `ScenarioService.evaluate`, строит из серверного отчёта контекст для объяснения и передаёт его асинхронному адаптеру. Контекст содержит выбранные меры и каталог, стоимость, лаги, эффекты до clip, синергии, показатели и Score до/после, критические пары и составляющие формулы.
+- Шаблонное объяснение строится из отчёта; fallback явно помечен `mode=fallback`, `llm_model=null` и предупреждением с типизированной причиной. Ответ адаптера перед выдачей повторно проверяется по `ExplanationSchema` и непустому ID реально использованной модели.
+- Публичные интерфейсы: `ExplanationService.explain(model_version, selections) -> ExplainResponse`, `ExplanationAdapter.explain(facts) -> ExplanationSuccess | ExplanationFailure`, `build_ai_context(report, dataset)`, `template_explanation(facts)` и `fallback_response(facts, reason)`. Причины отказа заданы `ExplanationFailureReason`.
+- Фактически выполненные проверки: чтение требований, существующего кода, `git status` и `git diff`; просмотр изменённых файлов и diff. Тесты, приложение и внешний API не запускались.
+- Ограничения: адаптер OpenAI и HTTP-маршрут explain относятся к этапу 7. Проверка схемы ответа не доказывает фактическую верность свободного текста модели; реальный AI-ответ на этом этапе не получен.
