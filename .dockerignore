@@ -11,4 +11,8 @@ __pycache__/
 venv/
 dist/
 build/
+*.egg-info/
+.coverage
+coverage/
+test-dbarin.txt
 docs/
