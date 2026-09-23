@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, SerializerFunctionWrapHandler, model_serializer, model_validator
 
 
 class StrictSchema(BaseModel):
@@ -19,6 +19,13 @@ class SelectionSchema(StrictSchema):
         if isinstance(value, dict) and "district_id" in value and value["district_id"] is None:
             raise ValueError("district_id must be omitted rather than null")
         return value
+
+    @model_serializer(mode="wrap")
+    def serialize_selection(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        data = handler(self)
+        if self.district_id is None:
+            data.pop("district_id", None)
+        return data
 
 
 class ScenarioRequest(StrictSchema):
