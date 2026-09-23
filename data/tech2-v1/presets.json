@@ -1,0 +1,19 @@
+{
+  "model_version": "tech2-v1",
+  "presets": [
+    {"id": "tech2-example", "title": "Пример Tech2: школы и здоровье Нуры", "selections": [
+      {"measure_id": "M7", "district_id": "nura"},
+      {"measure_id": "M8", "district_id": "nura"},
+      {"measure_id": "M10", "district_id": "nura"},
+      {"measure_id": "M12"},
+      {"measure_id": "M5", "district_id": "saryarka"}
+    ]},
+    {"id": "tech2-cheapest", "title": "Недорогой набор Tech2: спорт и безопасность Нуры", "selections": [
+      {"measure_id": "M9", "district_id": "nura"},
+      {"measure_id": "M11", "district_id": "nura"},
+      {"measure_id": "M10", "district_id": "nura"},
+      {"measure_id": "M12"},
+      {"measure_id": "M4", "district_id": "saryarka"}
+    ]}
+  ]
+}

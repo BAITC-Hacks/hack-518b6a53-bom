@@ -1,0 +1,22 @@
+{
+  "model_version": "tech2-v1",
+  "budget_limit": 100,
+  "required_decisions": 5,
+  "max_per_direction": 2,
+  "horizon_quarters": 8,
+  "critical_threshold": 40,
+  "critical_penalty": 1.0,
+  "average_weight": 0.7,
+  "minimum_weight": 0.3,
+  "indicator_weights": {"T1": 0.10, "T2": 0.10, "E1": 0.09, "E2": 0.11, "S1": 0.11, "S2": 0.11, "B1": 0.09, "B2": 0.09, "C1": 0.10, "C2": 0.10},
+  "conflicts": [
+    {"first_measure_id": "M1", "second_measure_id": "M3", "scope": "global"},
+    {"first_measure_id": "M4", "second_measure_id": "M7", "scope": "same_district"},
+    {"first_measure_id": "M5", "second_measure_id": "M13", "scope": "same_district"}
+  ],
+  "synergies": [
+    {"first_measure_id": "M1", "second_measure_id": "M2", "indicator": "T1", "bonus": 2},
+    {"first_measure_id": "M10", "second_measure_id": "M12", "indicator": "B1", "bonus": 2},
+    {"first_measure_id": "M5", "second_measure_id": "M6", "indicator": "E2", "bonus": 2}
+  ]
+}

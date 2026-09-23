@@ -1,8 +1,7 @@
+.git
 .env
 .env.*
 !.env.example
-node_modules/
-*.log
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -10,6 +9,10 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
-*.egg-info/
 dist/
 build/
+*.egg-info/
+.coverage
+coverage/
+test-dbarin.txt
+docs/
