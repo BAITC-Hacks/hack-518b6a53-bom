@@ -16,6 +16,5 @@ build/
 *.egg-info/
 .coverage
 coverage/
-test-dbarin.txt
 legal
 docs/
