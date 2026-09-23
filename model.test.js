@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BASELINE, calculate, getAdditionIssue, getScenarioIssue, validateAddition, validateScenario } from './model.js';
+import { BASELINE, INDICATORS, SYNERGIES, calculate, explainScenario, getAdditionIssue, getScenarioIssue, validateAddition, validateScenario } from './model.js';
 
 const example = [
   { id: 'M7', districtId: 'nura' },
@@ -90,4 +90,100 @@ test('кодированные валидаторы принимают допу�
     assert.equal(validateAddition([{ id: first, districtId: 'nura' }], second, 'esil'), null);
   }
   assert.deepEqual(example, snapshot);
+});
+
+const closeTo = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-10, `${message}: ${actual} ≠ ${expected}`);
+
+test('объяснение пустого сценария сохраняет базу и показывает оставшиеся проблемы', () => {
+  const explanation = explainScenario();
+  assert.deepEqual(explanation.result, BASELINE);
+  assert.deepEqual(explanation.contributions, []);
+  assert.deepEqual(explanation.synergies, []);
+  assert.ok(explanation.districts.every(district => district.delta === 0));
+  const nura = explanation.districts.find(district => district.id === 'nura');
+  assert.deepEqual(nura.critical, [
+    { code: 'S1', before: 38, after: 38 },
+    { code: 'S2', before: 35, after: 35 }
+  ]);
+  assert.deepEqual(nura.lowest, { code: 'S2', before: 35, after: 35 });
+});
+
+test('объяснение сохраняет отрицательный эффект переходов и нулевые эффекты других районов', () => {
+  const decisions = [{ id: 'M11', districtId: 'nura' }];
+  const explanation = explainScenario(decisions);
+  const contribution = explanation.contributions[0];
+  assert.equal(contribution.districtId, 'nura');
+  const nura = contribution.districts.find(district => district.id === 'nura');
+  assert.equal(nura.values[0], -1.75); // T1: -2 × 7/8
+  assert.equal(nura.values[7], 10.5); // B2: +12 × 7/8
+  closeTo(nura.scoreDelta, -.175 + .945, 'district trade-off');
+  closeTo(contribution.cityScoreDelta, explanation.result.score - BASELINE.score, 'single city contribution');
+  for (const district of contribution.districts.filter(district => district.id !== 'nura')) {
+    assert.equal(district.scoreDelta, 0);
+    assert.deepEqual(district.values, Array(10).fill(0));
+  }
+});
+
+test('синергии объясняются в нужном районе и делятся поровну между двумя мероприятиями', () => {
+  for (const synergy of SYNERGIES) {
+    const decisions = [{ id: synergy.first, districtId: 'nura' }, { id: synergy.second }];
+    const explanation = explainScenario(decisions);
+    assert.deepEqual(explanation.synergies, [{ ...synergy, districtId: 'nura' }]);
+    assert.equal(explanation.contributions[1].districtId, null);
+    const indicatorIndex = INDICATORS.findIndex(indicator => indicator.code === synergy.code);
+    for (let index = 0; index < decisions.length; index++) {
+      const single = calculate([decisions[index]]).districts.find(district => district.id === 'nura');
+      const base = BASELINE.districts.find(district => district.id === 'nura');
+      const contribution = explanation.contributions[index].districts.find(district => district.id === 'nura');
+      closeTo(contribution.values[indicatorIndex], single.values[indicatorIndex] - base.values[indicatorIndex] + synergy.bonus / 2, `${synergy.first}/${synergy.second} half bonus`);
+    }
+    assert.deepEqual(explainScenario(decisions.slice(0, 1)).synergies, []);
+    assert.deepEqual(explainScenario(decisions.slice(1)).synergies, []);
+  }
+});
+
+const weakestSwitch = [
+  { id: 'M3', districtId: 'nura' },
+  { id: 'M7', districtId: 'nura' },
+  { id: 'M8', districtId: 'nura' },
+  { id: 'M11', districtId: 'nura' },
+  { id: 'M10', districtId: 'nura' }
+];
+
+test('вклады сходятся с расчётом города, районов и показателей, включая смену слабейшего района', () => {
+  assert.equal(validateScenario(weakestSwitch), null);
+  const switched = calculate(weakestSwitch);
+  const weakest = switched.districts.reduce((lowest, district) => district.score < lowest.score ? district : lowest);
+  assert.equal(weakest.id, 'saryarka');
+  assert.equal(switched.critical, 0);
+  for (const decisions of [[], example, weakestSwitch, [{ id: 'M1', districtId: 'almaty' }, { id: 'M2' }]]) {
+    const snapshot = structuredClone(decisions);
+    const { result, contributions, districts } = explainScenario(decisions);
+    assert.deepEqual(result, calculate(decisions));
+    closeTo(contributions.reduce((sum, item) => sum + item.cityScoreDelta, 0), result.score - BASELINE.score, 'city conservation');
+    result.districts.forEach((district, index) => {
+      const districtDelta = district.score - BASELINE.districts[index].score;
+      closeTo(contributions.reduce((sum, item) => sum + item.districts[index].scoreDelta, 0), districtDelta, `${district.id} conservation`);
+      closeTo(districts[index].delta, districtDelta, `${district.id} explained delta`);
+      district.values.forEach((value, indicatorIndex) => {
+        closeTo(contributions.reduce((sum, item) => sum + item.districts[index].values[indicatorIndex], 0), value - BASELINE.districts[index].values[indicatorIndex], `${district.id}/${INDICATORS[indicatorIndex].code} conservation`);
+      });
+      assert.deepEqual(districts[index].critical.map(indicator => indicator.code), INDICATORS.filter((_, indicatorIndex) => district.values[indicatorIndex] < 40).map(indicator => indicator.code));
+      assert.equal(districts[index].lowest.after, Math.min(...district.values));
+    });
+    assert.deepEqual(decisions, snapshot);
+  }
+});
+
+test('распределение вклада не зависит от порядка добавления мероприятий', () => {
+  const forward = explainScenario(weakestSwitch);
+  const reverse = explainScenario([...weakestSwitch].reverse());
+  for (const contribution of forward.contributions) {
+    const other = reverse.contributions.find(item => item.id === contribution.id);
+    closeTo(contribution.cityScoreDelta, other.cityScoreDelta, `${contribution.id} city order independence`);
+    contribution.districts.forEach((district, index) => {
+      closeTo(district.scoreDelta, other.districts[index].scoreDelta, `${contribution.id}/${district.id} order independence`);
+      district.values.forEach((value, indicatorIndex) => closeTo(value, other.districts[index].values[indicatorIndex], 'indicator order independence'));
+    });
+  }
 });

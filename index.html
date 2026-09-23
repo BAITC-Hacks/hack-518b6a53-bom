@@ -72,6 +72,10 @@
       <div class="report-mode" id="reportMode"><button type="button" data-mode="metrics" class="active" data-i18n="ui.metrics">Показатели</button><button type="button" data-mode="analysis" data-i18n="ui.analysis">Выводы</button></div><div id="reportContent" class="report-content" data-mode="metrics"></div>
     </main>
   </div>
+  <dialog class="object-dialog" id="objectDialog" aria-labelledby="objectTitle">
+    <div class="object-dialog-toolbar"><button class="object-close" id="closeObjectButton" type="button" aria-label="Закрыть карточку" data-i18n-aria="objects.close" autofocus>×</button></div>
+    <div id="objectDetails"></div>
+  </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script type="module" src="./app.js"></script>
 </body>

@@ -41,10 +41,15 @@ function positionsByKey(objects) {
   return Object.fromEntries(objects.map(({ key, x, y, scale, slot, districtId }) => [key, { x, y, scale, slot, districtId }]));
 }
 
-function assertRetainedPositions(previous, next) {
+function assertRetainedPositions(previous, next, ignoreSaryarka = false) {
   const before = positionsByKey(previous);
   for (const [key, position] of Object.entries(positionsByKey(next))) {
-    if (before[key]) assert.deepEqual(position, before[key], `${key}: existing object must not move`);
+    if (ignoreSaryarka && position.districtId === 'saryarka') continue;
+    if (before[key]) {
+      const { scale: oldScale, ...oldAnchor } = before[key];
+      const { scale: newScale, ...newAnchor } = position;
+      assert.deepEqual(newAnchor, oldAnchor, `${key}: existing object anchor must not move`);
+    }
   }
 }
 
@@ -98,7 +103,7 @@ test('five compatible district measures fit together in every district, includin
   }
 });
 
-test('adding, removing, and redrawing a scenario preserve the positions of retained objects', () => {
+test('adding and removing preserve other district anchors while Saryarka adapts; redraws remain identical', () => {
   let decisions = [];
   let objects = [];
   const fullScenario = [...cityScenario, { id: 'M9', districtId: 'saryarka' }];
@@ -107,7 +112,7 @@ test('adding, removing, and redrawing a scenario preserve the positions of retai
     const snapshot = structuredClone(objects);
     const next = layoutMapObjects(decisions, objects);
     assert.deepEqual(objects, snapshot, 'layout must not mutate the previous layout');
-    assertRetainedPositions(objects, next);
+    assertRetainedPositions(objects, next, true);
     assertSafeLayout(next);
     objects = next;
   }
@@ -119,13 +124,49 @@ test('adding, removing, and redrawing a scenario preserve the positions of retai
   const reduced = layoutMapObjects(decisions, objects);
   assert.equal(reduced.length, 16);
   assert.ok(reduced.every(object => object.measureId !== 'M6'));
-  assertRetainedPositions(objects, reduced);
+  assertRetainedPositions(objects, reduced, true);
   assertSafeLayout(reduced);
 
   const restored = layoutMapObjects(fullScenario, reduced);
-  assertRetainedPositions(reduced, restored);
+  assertRetainedPositions(reduced, restored, true);
   assert.equal(restored.length, 21);
   assertSafeLayout(restored);
   assert.deepEqual(layoutMapObjects([], restored), [], 'reset must remove every object');
   assert.deepEqual(layoutMapObjects([], []), [], 'an empty scenario must remain empty');
+});
+
+test('sparse scenarios enlarge map objects while every density stays clear of neighboring districts', () => {
+  for (let count = 1; count <= 4; count++) {
+    const decisions = cityScenario.slice(0, count);
+    const objects = layoutMapObjects(decisions);
+    assert.equal(objects.length, count * 5);
+    assertSafeLayout(objects);
+    assert.deepEqual(layoutMapObjects(decisions, objects), objects, 'redraw must not change sizes or anchors');
+    if (count <= 2) {
+      for (const districtId of districtIds) {
+        assert.ok(objects.some(object => object.districtId === districtId && object.scale >= 1), `${districtId}: sparse scenarios have a prominent object`);
+      }
+    }
+    assert.ok(objects.filter(object => object.districtId === 'saryarka').every(object => object.scale >= (count <= 2 ? 1.15 : .65)));
+  }
+});
+
+test('every order of adding the busiest legal scenario remains safe and stable when redrawn', () => {
+  const scenario = [...cityScenario, { id: 'M9', districtId: 'saryarka' }];
+  const permutations = items => items.length <= 1 ? [items] : items.flatMap((item, index) =>
+    permutations(items.filter((_, otherIndex) => otherIndex !== index)).map(rest => [item, ...rest]));
+  for (const order of permutations(scenario)) {
+    let objects = [];
+    for (let count = 1; count <= order.length; count++) {
+      const decisions = order.slice(0, count);
+      const snapshot = structuredClone(objects);
+      const next = layoutMapObjects(decisions, objects);
+      assert.deepEqual(objects, snapshot, 'layout does not mutate previous objects');
+      assertRetainedPositions(objects, next, true);
+      assertSafeLayout(next);
+      assert.deepEqual(layoutMapObjects(decisions, next), next, 'focus/language redraw does not change sizes or positions');
+      assert.deepEqual(layoutMapObjects([...decisions].reverse(), next), next, 'retained decisions keep their layout after input reorder');
+      objects = next;
+    }
+  }
 });

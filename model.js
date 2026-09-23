@@ -38,6 +38,11 @@ export const MEASURES = [
 
 export const BUDGET = 100;
 export const HORIZON = 8;
+export const SYNERGIES = [
+  { first: 'M1', second: 'M2', code: 'T1', bonus: 2 },
+  { first: 'M10', second: 'M12', code: 'B1', bonus: 2 },
+  { first: 'M5', second: 'M6', code: 'E2', bonus: 2 }
+];
 const byCode = Object.fromEntries(INDICATORS.map((indicator, index) => [indicator.code, index]));
 const byMeasure = Object.fromEntries(MEASURES.map(measure => [measure.id, measure]));
 const clip = value => Math.max(0, Math.min(100, value));
@@ -111,7 +116,7 @@ export function calculate(decisions = []) {
     }
   }
   const has = id => decisions.some(decision => decision.id === id);
-  for (const [first, second, code, bonus] of [['M1', 'M2', 'T1', 2], ['M10', 'M12', 'B1', 2], ['M5', 'M6', 'E2', 2]]) {
+  for (const { first, second, code, bonus } of SYNERGIES) {
     if (has(first) && has(second)) {
       const district = districts.find(item => item.id === decisions.find(decision => decision.id === first).districtId);
       if (district) district.values[byCode[code]] += bonus;
@@ -126,6 +131,66 @@ export function calculate(decisions = []) {
   const weakest = Math.min(...districts.map(district => district.score));
   const critical = districts.reduce((sum, district) => sum + district.values.filter(value => value < 40).length, 0);
   return { districts, average, weakest, critical, score: .7 * average + .3 * weakest - critical, spent: decisions.reduce((sum, decision) => sum + (byMeasure[decision.id]?.cost || 0), 0) };
+}
+
+export function explainScenario(decisions = []) {
+  if (decisions.length > 5) throw new RangeError('Scenario explanations support at most five decisions.');
+
+  // At most 32 model runs. Shapley attribution averages each measure's marginal
+  // effect across all addition orders, sharing synergies and threshold changes.
+  const count = decisions.length;
+  const factorial = [1, 1, 2, 6, 24, 120];
+  const subsets = Array.from({ length: 2 ** count }, (_, mask) => {
+    const included = decisions.filter((_, index) => mask & (1 << index));
+    return { size: included.length, result: calculate(included) };
+  });
+  const baseline = subsets[0].result;
+  const result = subsets[subsets.length - 1].result;
+  const contributions = decisions.map((decision, index) => {
+    const contribution = {
+      id: decision.id,
+      districtId: byMeasure[decision.id]?.scope === 'city' ? null : decision.districtId || null,
+      cityScoreDelta: 0,
+      districts: DISTRICTS.map(district => ({ id: district.id, scoreDelta: 0, values: INDICATORS.map(() => 0) }))
+    };
+    for (let mask = 0; mask < subsets.length; mask++) {
+      if (mask & (1 << index)) continue;
+      const { size, result: before } = subsets[mask];
+      const after = subsets[mask | (1 << index)].result;
+      const weight = factorial[size] * factorial[count - size - 1] / factorial[count];
+      contribution.cityScoreDelta += (after.score - before.score) * weight;
+      for (let districtIndex = 0; districtIndex < DISTRICTS.length; districtIndex++) {
+        const district = contribution.districts[districtIndex];
+        const prior = before.districts[districtIndex];
+        const next = after.districts[districtIndex];
+        district.scoreDelta += (next.score - prior.score) * weight;
+        for (let indicatorIndex = 0; indicatorIndex < INDICATORS.length; indicatorIndex++) {
+          district.values[indicatorIndex] += (next.values[indicatorIndex] - prior.values[indicatorIndex]) * weight;
+        }
+      }
+    }
+    return contribution;
+  });
+  const synergies = SYNERGIES.flatMap(synergy => {
+    const first = decisions.find(decision => decision.id === synergy.first);
+    if (!first || !decisions.some(decision => decision.id === synergy.second)) return [];
+    if (!DISTRICTS.some(district => district.id === first.districtId)) return [];
+    return [{ ...synergy, districtId: first.districtId }];
+  });
+  const districts = result.districts.map((district, index) => {
+    const indicators = INDICATORS.map((indicator, indicatorIndex) => ({
+      code: indicator.code,
+      before: baseline.districts[index].values[indicatorIndex],
+      after: district.values[indicatorIndex]
+    }));
+    return {
+      id: district.id,
+      delta: district.score - baseline.districts[index].score,
+      critical: indicators.filter(indicator => indicator.after < 40),
+      lowest: indicators.reduce((lowest, indicator) => indicator.after < lowest.after ? indicator : lowest)
+    };
+  });
+  return { result, contributions, synergies, districts };
 }
 
 export const BASELINE = calculate();

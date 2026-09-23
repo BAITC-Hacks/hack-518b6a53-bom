@@ -1,4 +1,4 @@
-import { INDICATORS, DISTRICTS, MEASURES, BUDGET, HORIZON, BASELINE, calculate, getAdditionIssue, getScenarioIssue } from './model.js';
+import { INDICATORS, DISTRICTS, MEASURES, BUDGET, HORIZON, BASELINE, calculate, explainScenario, getAdditionIssue, getScenarioIssue } from './model.js';
 import { MAP_DISTRICTS, MAP_RIVER, MAP_LAKES } from './map-geometry.js';
 import { layoutMapObjects, mapLabelPosition, projectMapPoint } from './map-objects.js';
 import { renderMapObject } from './map-object-art.js';
@@ -7,12 +7,13 @@ import { translate as t, formatNumber, groupName, measureName, districtName, ind
 setLanguage(loadLanguage());
 
 const $ = selector => document.querySelector(selector);
-const state = { decisions: [], selectedMeasureId: null, focusedDistrictId: null, filter: 'Все', draggingId: null, hoverTarget: null, indicatorsOpen: false, reportTab: 'city', status: null, statusError: false };
+const state = { decisions: [], selectedMeasureId: null, focusedDistrictId: null, filter: 'Все', draggingId: null, hoverTarget: null, indicatorsOpen: false, reportTab: 'city', status: null, statusError: false, inspectedObject: null };
 const measureById = Object.fromEntries(MEASURES.map(measure => [measure.id, measure]));
 const districtById = Object.fromEntries(DISTRICTS.map(district => [district.id, district]));
 let toastTimer;
 let toastMessage = null;
 let previewTarget = null;
+let explanationCache = { key: null, value: null };
 const escapeHTML = value => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const text = (key, params) => escapeHTML(t(key, params));
 const project = projectMapPoint;
@@ -46,12 +47,15 @@ function renderScenarioObjects() {
       element.dataset.objectKey = item.key;
       element.dataset.district = item.districtId;
       element.dataset.measureId = item.measureId;
-      element.setAttribute('role', 'img');
-      element.innerHTML = `<title></title><g class="map-object-art">${renderMapObject(item.measureId)}</g>`;
+      element.setAttribute('role', 'button');
+      element.setAttribute('tabindex', '0');
+      element.setAttribute('aria-haspopup', 'dialog');
+      element.setAttribute('aria-controls', 'objectDialog');
+      element.innerHTML = `<title></title><rect class="map-object-hit" x="-23" y="-40" width="46" height="46" rx="5"/><g class="map-object-art">${renderMapObject(item.measureId)}</g>`;
     }
     const label = `${measureName(item.measureId)} — ${districtName(item.districtId)}`;
-    element.setAttribute('aria-label', label);
-    element.querySelector('title').textContent = label;
+    element.setAttribute('aria-label', t('objects.open', { name: measureName(item.measureId), district: districtName(item.districtId) }));
+    element.querySelector('title').textContent = `${label}. ${t('objects.hint')}`;
     element.setAttribute('transform', `translate(${item.x} ${item.y}) scale(${item.scale})`);
     element.classList.toggle('muted', Boolean(state.focusedDistrictId && state.focusedDistrictId !== item.districtId));
     // Keep existing nodes so focusing a district does not replay their entrance animation.
@@ -86,6 +90,43 @@ function renderStatus() {
 }
 function current() { return calculate(state.decisions); }
 function districtResult(result, id) { return result.districts.find(district => district.id === id); }
+function explanation() {
+  const key = JSON.stringify(state.decisions);
+  if (explanationCache.key !== key) explanationCache = { key, value: explainScenario(state.decisions) };
+  return explanationCache.value;
+}
+
+function synergyMarkup(synergies) {
+  return synergies.map(item => `<div class="synergy-item"><strong>${text('insights.synergyPair', { first: measureName(item.first), second: measureName(item.second) })}</strong><p>${text('insights.synergyDetail', { district: districtName(item.districtId), indicator: indicatorName(item.code), value: signed(item.bonus, 1) })}</p></div>`).join('');
+}
+
+function renderObjectDetails() {
+  const item = state.inspectedObject;
+  if (!item) return;
+  const measure = measureById[item.measureId];
+  const analysis = explanation();
+  const contribution = analysis.contributions.find(entry => entry.id === item.measureId)?.districts.find(entry => entry.id === item.districtId);
+  if (!contribution) return;
+  const synergies = analysis.synergies.filter(entry => entry.districtId === item.districtId && [entry.first, entry.second].includes(item.measureId));
+  $('#objectDetails').innerHTML = `<div class="object-detail-hero"><svg viewBox="-28 -44 56 54" class="object-illustration" aria-hidden="true">${renderMapObject(item.measureId)}</svg><div><span class="object-kicker">${measure.id} · ${escapeHTML(groupName(measure.group))}</span><h2 id="objectTitle">${escapeHTML(measureName(measure.id))}</h2><p>${text('objects.location', { district: districtName(item.districtId) })}</p><span class="measure-scope measure-scope--${measure.scope}">${text(measure.scope === 'city' ? 'ui.wholeCity' : 'ui.oneDistrict')}</span></div></div>
+    <div class="object-facts"><div><span>${text('objects.cost')}</span><strong>${text('ui.units', { value: format(measure.cost, 0) })}</strong></div><div><span>${text('objects.launch')}</span><strong>${text('objects.launchValue', { value: measure.lag })}</strong></div></div>
+    ${measure.scope === 'city' ? `<p class="object-note">${text('objects.cityCostNote')}</p>` : ''}
+    <section class="object-effects"><div class="object-section-heading"><h3>${text('objects.effectTitle')}</h3><span>${text('objects.effectPeriod', { value: HORIZON })}</span></div>
+      ${INDICATORS.map((indicator, index) => Math.abs(contribution.values[index]) < 1e-9 ? '' : `<div class="object-effect"><span>${escapeHTML(indicatorName(indicator.code))}</span><strong class="${contribution.values[index] < 0 ? 'negative' : 'positive'}">${signed(contribution.values[index])}</strong></div>`).join('')}
+      <div class="object-score"><span>${text('objects.score')}</span><strong>${signed(contribution.scoreDelta)}</strong></div><p class="object-note">${text('objects.effectNote')}</p>
+    </section>${synergies.length ? `<section class="object-synergies"><h3>${text('objects.connections')}</h3>${synergyMarkup(synergies)}<p class="object-note">${text('insights.synergyIncluded')}</p></section>` : ''}<p class="object-note object-disclaimer">${text('objects.modelNote')}</p>`;
+}
+
+function openObjectDetails(key) {
+  const item = mapObjects.find(object => object.key === key);
+  if (!item) return;
+  state.inspectedObject = item;
+  state.indicatorsOpen = false;
+  renderIndicators();
+  clearPreview();
+  renderObjectDetails();
+  $('#objectDialog').showModal();
+}
 
 function renderCatalog() {
   const visible = MEASURES.filter(measure => state.filter === 'Все' || measure.group === state.filter);
@@ -250,43 +291,56 @@ function clearPreview() {
   $('#cityMap').classList.remove('dragging');
 }
 
-function reportInsight(result) {
-  const ranked = [...result.districts].sort((a, b) => (b.score - b.baselineScore) - (a.score - a.baselineScore));
-  const weakest = [...result.districts].sort((a, b) => a.score - b.score)[0];
-  const best = ranked[0];
-  return { weakest, best, mostImproved: best.score - best.baselineScore };
-}
 function reportMetricRows(result, districtId = null) {
   const after = districtId ? districtResult(result, districtId).values : INDICATORS.map((_, index) => result.districts.reduce((sum, district) => sum + district.population * district.values[index], 0));
   const before = districtId ? districtById[districtId].values : INDICATORS.map((_, index) => DISTRICTS.reduce((sum, district) => sum + district.population * district.values[index], 0));
   return INDICATORS.map((item, index) => `<div class="report-line"><span class="report-line-name">${item.code} / ${escapeHTML(indicatorName(item.code))}</span><span class="report-line-track"><i style="width:${after[index]}%"></i></span><b class="${after[index] - before[index] < 0 ? 'negative' : 'positive'}">${signed(after[index] - before[index], 1)}</b></div>`).join('');
 }
-function reportActions(decisions) {
-  return `<div class="report-actions">${decisions.map(decision => `<span title="${escapeHTML(measureName(decision.id))}">${decision.id}<small>${escapeHTML(getTargetName(decision))}</small></span>`).join('') || `<span>${text('report.noMeasures')}</span>`}</div>`;
+function reportAnalysis(selected) {
+  const analysis = explanation();
+  const city = selected === 'city';
+  const result = analysis.result;
+  const best = [...analysis.districts].sort((a, b) => b.delta - a.delta)[0];
+  const target = city ? best : analysis.districts.find(item => item.id === selected);
+  const districtContribution = (entry, id) => entry.districts.find(item => item.id === id);
+  const contributionValue = entry => city ? entry.cityScoreDelta : districtContribution(entry, selected).scoreDelta;
+  const applied = analysis.contributions.filter(entry => city || !entry.districtId || entry.districtId === selected).sort((a, b) => contributionValue(b) - contributionValue(a));
+  const drivers = analysis.contributions.filter(entry => districtContribution(entry, target.id).scoreDelta > 1e-9)
+    .sort((a, b) => districtContribution(b, target.id).scoreDelta - districtContribution(a, target.id).scoreDelta).slice(0, 2).map(entry => measureName(entry.id));
+  const equalDistricts = city && analysis.districts.every(item => Math.abs(item.delta - best.delta) < 1e-9);
+  const lead = equalDistricts ? t('insights.allEqual', { value: signed(best.delta) }) : t(city ? 'insights.cityLead' : 'insights.districtLead', { district: districtName(target.id), value: signed(target.delta) });
+  const maxContribution = Math.max(...applied.map(entry => Math.abs(contributionValue(entry))), .01);
+  const total = city ? result.score - BASELINE.score : target.delta;
+  const synergies = analysis.synergies.filter(item => city || item.districtId === selected);
+  const relevantDistricts = analysis.districts.filter(item => city || item.id === selected);
+  const critical = relevantDistricts.flatMap(item => item.critical.map(risk => ({ ...risk, districtId: item.id }))).sort((a, b) => a.after - b.after);
+  const risks = critical.length ? critical : relevantDistricts.map(item => ({ ...item.lowest, districtId: item.id })).sort((a, b) => a.after - b.after).slice(0, 1);
+  return `<section class="report-card report-analysis" data-pane="analysis"><h2>${text('insights.title')}</h2>
+    <div class="insight-summary"><p>${escapeHTML(lead)}</p><p>${escapeHTML(drivers.length ? t('insights.drivers', { measures: drivers.join(', ') }) : t('insights.noDrivers'))}</p></div>
+    <section class="insight-section"><h3>${text('insights.contributions')}</h3><p class="insight-caption">${text(city ? 'insights.cityContribution' : 'insights.districtContribution')}</p>
+      <div class="contribution-list">${applied.map(entry => {
+        const value = contributionValue(entry);
+        const changes = INDICATORS.map((indicator, index) => ({ code: indicator.code, value: city ? entry.districts.reduce((sum, item) => sum + item.values[index] * districtById[item.id].population, 0) : districtContribution(entry, selected).values[index] })).filter(item => Math.abs(item.value) > 1e-9).sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, 2);
+        return `<div class="contribution-item"><div><strong>${escapeHTML(measureName(entry.id))}</strong><small>${entry.id} · ${escapeHTML(getTargetName(entry))}</small><small>${text(city ? 'insights.cityIndicatorChanges' : 'insights.districtIndicatorChanges', { changes: changes.map(item => `${indicatorName(item.code)} ${signed(item.value)}`).join(' · ') })}</small></div><b class="${value < 0 ? 'negative' : 'positive'}">${signed(value)}</b><span class="contribution-track" aria-hidden="true"><i class="${value < 0 ? 'negative' : ''}" style="width:${Math.abs(value) / maxContribution * 100}%"></i></span></div>`;
+      }).join('') || `<p class="insight-caption">${text('insights.noDrivers')}</p>`}</div>
+      <div class="contribution-total"><span>${text('insights.total')}</span><strong>${signed(total)}</strong></div>
+      <details class="insight-method"><summary>${text('insights.method')}</summary><p>${text('insights.methodText')}</p>${city ? `<p>${text('insights.scoreFormula')}</p>` : ''}</details>
+    </section>
+    <section class="insight-section"><h3>${text('insights.synergy')}</h3>${synergies.length ? `${synergyMarkup(synergies)}<p class="insight-caption">${text('insights.synergyIncluded')}</p>` : `<p class="insight-caption">${text('insights.noSynergy')}</p>`}</section>
+    <section class="insight-section"><h3>${text('insights.remaining')}</h3>${!critical.length ? `<p class="insight-caption">${text('insights.noCritical')}</p>` : ''}${risks.map(risk => {
+      const delta = risk.after - risk.before;
+      return `<div class="insight-risk"><span class="risk-label ${risk.after < 40 ? 'critical' : ''}">${text(risk.after < 40 ? 'insights.critical' : 'insights.lowest')}</span><strong>${text('insights.riskItem', { district: districtName(risk.districtId), indicator: indicatorName(risk.code) })}</strong><div><b>${text('insights.beforeAfter', { before: format(risk.before, 1), after: format(risk.after, 1) })}</b><span>${Math.abs(delta) < 1e-9 ? text('insights.unchanged') : text(delta > 0 ? 'insights.improved' : 'insights.worsened', { value: signed(delta, 1) })}</span></div></div>`;
+    }).join('')}</section>
+    <p class="insight-footer">${text('insights.budget', { spent: format(result.spent, 0), budget: BUDGET })} ${text('insights.timing', { value: HORIZON })}</p>
+  </section>`;
 }
 function renderReportContent() {
   const result = current();
   const selected = state.reportTab;
   const city = selected === 'city';
   const district = city ? null : districtResult(result, selected);
-  const { weakest, best, mostImproved } = reportInsight(result);
-  let strengths, risks, consequence;
-  let applied = state.decisions;
-  if (city) {
-    strengths = t('report.cityStrength', { name: districtName(best.id), value: signed(mostImproved) });
-    risks = `${t('report.cityRisk', { name: districtName(weakest.id), value: format(weakest.score) })} ${result.critical ? t('report.criticalCount', { value: format(result.critical, 0) }) : t('report.noCritical')}`;
-    consequence = t('report.cityConsequences', { spent: format(result.spent, 0), budget: BUDGET });
-  } else {
-    const changed = INDICATORS.map((indicator, index) => ({ ...indicator, delta: district.values[index] - districtById[selected].values[index], value: district.values[index] }));
-    const strongest = [...changed].sort((a, b) => b.delta - a.delta)[0];
-    const lowest = [...changed].sort((a, b) => a.value - b.value)[0];
-    strengths = strongest.delta > 0 ? t('report.districtStrength', { name: indicatorName(strongest.code), value: signed(strongest.delta, 1) }) : t('report.noDistrictChange');
-    risks = `${t('report.districtRisk', { name: indicatorName(lowest.code), value: format(lowest.value, 1) })}${lowest.value < 40 ? ` ${t('report.belowCritical')}` : ''}`;
-    consequence = t('report.districtConsequences', { value: signed(district.score - district.baselineScore), population: format(district.population * 100, 0) });
-    applied = state.decisions.filter(decision => !decision.districtId || decision.districtId === selected);
-  }
   const stats = city ? [[t('report.average'), format(result.average)], [t('report.minimum'), format(result.weakest)], [t('report.critical'), format(result.critical, 0)]] : [[t('report.current'), format(district.baselineScore)], [t('report.forecast'), format(district.score)], [t('report.change'), signed(district.score - district.baselineScore)]];
-  $('#reportContent').innerHTML = `<section class="report-card" data-pane="metrics"><h2>${escapeHTML(city ? t('ui.wholeCity') : districtName(district.id))}</h2><div class="report-stat-grid">${stats.map(([name, value]) => `<div class="report-stat"><span>${escapeHTML(name)}</span><strong>${value}</strong></div>`).join('')}</div><div class="report-metrics">${reportMetricRows(result, city ? null : selected)}</div></section><section class="report-card" data-pane="analysis"><h2>${text('report.changesTitle')}</h2><div class="report-narratives"><div class="report-narrative"><strong>${text('report.strength')}</strong><p>${escapeHTML(strengths)}</p></div><div class="report-narrative"><strong>${text('report.risk')}</strong><p>${escapeHTML(risks)}</p></div><div class="report-narrative"><strong>${text('report.consequences')}</strong><p>${escapeHTML(consequence)}</p></div></div>${reportActions(applied)}</section>`;
+  $('#reportContent').innerHTML = `<section class="report-card" data-pane="metrics"><h2>${escapeHTML(city ? t('ui.wholeCity') : districtName(district.id))}</h2><div class="report-stat-grid">${stats.map(([name, value]) => `<div class="report-stat"><span>${escapeHTML(name)}</span><strong>${value}</strong></div>`).join('')}</div><div class="report-metrics">${reportMetricRows(result, city ? null : selected)}</div></section>${reportAnalysis(selected)}`;
 }
 function renderReport() {
   const result = current();
@@ -326,6 +380,7 @@ function changeLanguage(language) {
   $('#catalogList').scrollTop = catalogScroll;
   renderStatus();
   if (previewTarget) renderPreview(previewTarget.id, previewTarget.districtId);
+  if ($('#objectDialog').open) renderObjectDetails();
   if (!$('#reportView').classList.contains('hidden')) renderReport();
 }
 $$('[data-language]').forEach(button => button.addEventListener('click', () => changeLanguage(button.dataset.language)));
@@ -347,6 +402,12 @@ $('#filterRow').addEventListener('click', event => { const chip = event.target.c
 $('#decisionList').addEventListener('click', event => { const button = event.target.closest('[data-remove]'); if (button) { state.decisions = state.decisions.filter(decision => decision.id !== button.dataset.remove); render(); setStatus(''); } });
 
 $('#cityMap').addEventListener('click', event => {
+  const object = event.target.closest('[data-object-key]');
+  if (object && !state.selectedMeasureId) {
+    event.stopPropagation();
+    openObjectDetails(object.dataset.objectKey);
+    return;
+  }
   const district = event.target.closest('[data-district]');
   if (!district) return;
   event.stopPropagation();
@@ -356,6 +417,13 @@ $('#cityMap').addEventListener('click', event => {
 });
 $('#cityMap').addEventListener('keydown', event => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
+  const object = event.target.closest('[data-object-key]');
+  if (object && !state.selectedMeasureId) {
+    event.preventDefault();
+    event.stopPropagation();
+    openObjectDetails(object.dataset.objectKey);
+    return;
+  }
   const district = event.target.closest('[data-district]');
   if (!district) return;
   event.preventDefault();
@@ -406,6 +474,7 @@ document.addEventListener('click', event => {
 });
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
+  if ($('#objectDialog').open) return;
   state.indicatorsOpen = false;
   state.focusedDistrictId = null;
   state.selectedMeasureId = null;
@@ -413,6 +482,17 @@ document.addEventListener('keydown', event => {
   clearPreview();
   render();
   setStatus('');
+});
+$('#closeObjectButton').addEventListener('click', () => $('#objectDialog').close());
+$('#objectDialog').addEventListener('click', event => {
+  if (event.target !== event.currentTarget) return;
+  const rect = event.currentTarget.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.currentTarget.close();
+});
+$('#objectDialog').addEventListener('close', () => {
+  const key = state.inspectedObject?.key;
+  state.inspectedObject = null;
+  $$('.map-object').find(element => element.dataset.objectKey === key)?.focus({ preventScroll: true });
 });
 $('#calculateButton').addEventListener('click', openReport);
 $('#reportTabs').addEventListener('click', event => { const tab = event.target.closest('[data-report-tab]'); if (!tab) return; state.reportTab = tab.dataset.reportTab; $$('.report-tab').forEach(item => item.classList.toggle('active', item === tab)); renderReportContent(); });
