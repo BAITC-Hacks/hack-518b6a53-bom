@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { BASELINE, BUDGET, HORIZON, REQUIRED_DECISIONS, RULES, MODEL_VERSION, INDICATORS, DISTRICTS, MEASURES, PRESETS, calculate, configureCatalog, getAdditionIssue, getScenarioIssue, toSelections, fromServerSnapshot } from './model.js';
+import { BASELINE, BUDGET, HORIZON, REQUIRED_DECISIONS, RULES, MODEL_VERSION, INDICATORS, DISTRICTS, MEASURES, PRESETS, SYNERGIES, explainScenario, validateScenario, calculate, configureCatalog, getAdditionIssue, getScenarioIssue, toSelections, fromServerSnapshot } from './model.js';
 
 const source = Object.fromEntries(await Promise.all(['districts', 'measures', 'rules', 'presets'].map(async name => [name, JSON.parse(await readFile(new URL(`data/tech2-v1/${name}.json`, import.meta.url), 'utf8'))])));
 const { model_version, ...rules } = source.rules;
@@ -152,4 +152,119 @@ test('server snapshots retain authoritative numeric scores and adapt shuffled in
   configureCatalog({ ...catalog, baseline: snapshot });
   assert.equal(BASELINE.score, 17.25);
   configureCatalog(catalog);
+});
+
+const example = PRESETS[0].decisions;
+
+const closeTo = (actual, expected, message) => assert.ok(Math.abs(actual - expected) < 1e-10, `${message}: ${actual} ≠ ${expected}`);
+
+test('объяснение пустого сценария сохраняет базу и показывает оставшиеся проблемы', () => {
+  const explanation = explainScenario();
+  assert.deepEqual(explanation.result, BASELINE);
+  assert.deepEqual(explanation.contributions, []);
+  assert.deepEqual(explanation.synergies, []);
+  assert.ok(explanation.districts.every(district => district.delta === 0));
+  const nura = explanation.districts.find(district => district.id === 'nura');
+  assert.deepEqual(nura.critical, [
+    { code: 'S1', before: 38, after: 38 },
+    { code: 'S2', before: 35, after: 35 }
+  ]);
+  assert.deepEqual(nura.lowest, { code: 'S2', before: 35, after: 35 });
+});
+
+test('объяснение сохраняет отрицательный эффект переходов и нулевые эффекты других районов', () => {
+  const decisions = [{ id: 'M11', districtId: 'nura' }];
+  const explanation = explainScenario(decisions);
+  const contribution = explanation.contributions[0];
+  assert.equal(contribution.districtId, 'nura');
+  const nura = contribution.districts.find(district => district.id === 'nura');
+  assert.equal(nura.values[0], -1.75); // T1: -2 × 7/8
+  assert.equal(nura.values[7], 10.5); // B2: +12 × 7/8
+  closeTo(nura.scoreDelta, -.175 + .945, 'district trade-off');
+  closeTo(contribution.cityScoreDelta, explanation.result.score - BASELINE.score, 'single city contribution');
+  for (const district of contribution.districts.filter(district => district.id !== 'nura')) {
+    assert.equal(district.scoreDelta, 0);
+    assert.deepEqual(district.values, Array(10).fill(0));
+  }
+});
+
+test('синергии объясняются в нужном районе и делятся поровну между двумя мероприятиями', () => {
+  for (const synergy of SYNERGIES) {
+    const decisions = [{ id: synergy.first, districtId: 'nura' }, { id: synergy.second }];
+    const explanation = explainScenario(decisions);
+    assert.deepEqual(explanation.synergies, [{ ...synergy, districtId: 'nura' }]);
+    assert.equal(explanation.contributions[1].districtId, null);
+    const indicatorIndex = INDICATORS.findIndex(indicator => indicator.code === synergy.code);
+    for (let index = 0; index < decisions.length; index++) {
+      const single = calculate([decisions[index]]).districts.find(district => district.id === 'nura');
+      const base = BASELINE.districts.find(district => district.id === 'nura');
+      const contribution = explanation.contributions[index].districts.find(district => district.id === 'nura');
+      closeTo(contribution.values[indicatorIndex], single.values[indicatorIndex] - base.values[indicatorIndex] + synergy.bonus / 2, `${synergy.first}/${synergy.second} half bonus`);
+    }
+    assert.deepEqual(explainScenario(decisions.slice(0, 1)).synergies, []);
+    assert.deepEqual(explainScenario(decisions.slice(1)).synergies, []);
+  }
+});
+
+const weakestSwitch = [
+  { id: 'M3', districtId: 'nura' },
+  { id: 'M7', districtId: 'nura' },
+  { id: 'M8', districtId: 'nura' },
+  { id: 'M11', districtId: 'nura' },
+  { id: 'M10', districtId: 'nura' }
+];
+
+test('вклады сходятся с расчётом города, районов и показателей, включая смену слабейшего района', () => {
+  assert.equal(validateScenario(weakestSwitch), null);
+  const switched = calculate(weakestSwitch);
+  const weakest = switched.districts.reduce((lowest, district) => district.score < lowest.score ? district : lowest);
+  assert.equal(weakest.id, 'saryarka');
+  assert.equal(switched.critical, 0);
+  for (const decisions of [[], example, weakestSwitch, [{ id: 'M1', districtId: 'almaty' }, { id: 'M2' }]]) {
+    const snapshot = structuredClone(decisions);
+    const { result, contributions, districts } = explainScenario(decisions);
+    assert.deepEqual(result, calculate(decisions));
+    closeTo(contributions.reduce((sum, item) => sum + item.cityScoreDelta, 0), result.score - BASELINE.score, 'city conservation');
+    result.districts.forEach((district, index) => {
+      const districtDelta = district.score - BASELINE.districts[index].score;
+      closeTo(contributions.reduce((sum, item) => sum + item.districts[index].scoreDelta, 0), districtDelta, `${district.id} conservation`);
+      closeTo(districts[index].delta, districtDelta, `${district.id} explained delta`);
+      district.values.forEach((value, indicatorIndex) => {
+        closeTo(contributions.reduce((sum, item) => sum + item.districts[index].values[indicatorIndex], 0), value - BASELINE.districts[index].values[indicatorIndex], `${district.id}/${INDICATORS[indicatorIndex].code} conservation`);
+      });
+      assert.deepEqual(districts[index].critical.map(indicator => indicator.code), INDICATORS.filter((_, indicatorIndex) => district.values[indicatorIndex] < RULES.critical_threshold).map(indicator => indicator.code));
+      assert.equal(districts[index].lowest.after, Math.min(...district.values));
+    });
+    assert.deepEqual(decisions, snapshot);
+  }
+});
+
+test('распределение вклада не зависит от порядка добавления мероприятий', () => {
+  const forward = explainScenario(weakestSwitch);
+  const reverse = explainScenario([...weakestSwitch].reverse());
+  for (const contribution of forward.contributions) {
+    const other = reverse.contributions.find(item => item.id === contribution.id);
+    closeTo(contribution.cityScoreDelta, other.cityScoreDelta, `${contribution.id} city order independence`);
+    contribution.districts.forEach((district, index) => {
+      closeTo(district.scoreDelta, other.districts[index].scoreDelta, `${contribution.id}/${district.id} order independence`);
+      district.values.forEach((value, indicatorIndex) => closeTo(value, other.districts[index].values[indicatorIndex], 'indicator order independence'));
+    });
+  }
+});
+
+test('explanations follow refreshed catalog synergies, critical thresholds and decision limits', t => {
+  t.after(() => configureCatalog(catalog));
+  const changed = structuredClone(catalog);
+  changed.rules.required_decisions = 2;
+  changed.rules.critical_threshold = 60;
+  changed.rules.synergies = [{ first_measure_id: 'M10', second_measure_id: 'M12', indicator: 'T1', bonus: 7 }];
+  configureCatalog(changed);
+  assert.deepEqual(SYNERGIES, [{ first: 'M10', second: 'M12', code: 'T1', bonus: 7 }]);
+  const analysis = explainScenario([{ id: 'M10', districtId: 'esil' }, { id: 'M12' }]);
+  assert.deepEqual(analysis.synergies, [{ first: 'M10', second: 'M12', code: 'T1', bonus: 7, districtId: 'esil' }]);
+  assert.deepEqual(analysis.districts.find(district => district.id === 'esil').critical.find(indicator => indicator.code === 'T1'), { code: 'T1', before: 45, after: 52 });
+  const indicatorIndex = INDICATORS.findIndex(indicator => indicator.code === 'T1');
+  for (const contribution of analysis.contributions) closeTo(contribution.districts.find(district => district.id === 'esil').values[indicatorIndex], 3.5, 'updated synergy contribution');
+  closeTo(analysis.contributions.reduce((sum, item) => sum + item.cityScoreDelta, 0), analysis.result.score - BASELINE.score, 'updated catalog city conservation');
+  assert.throws(() => explainScenario([{ id: 'M10', districtId: 'esil' }, { id: 'M12' }, { id: 'M14' }]), /at most 2 decisions/);
 });

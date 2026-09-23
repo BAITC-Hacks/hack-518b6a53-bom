@@ -88,13 +88,40 @@ test('timeout aborts a stalled request while user cancellation remains an AbortE
   await assert.rejects(getCatalog({ signal: controller.signal }), { name: 'AbortError' });
 });
 
-test('explain carries each supported UI language without changing numerical scenario payload', async t => {
+test('explain carries all three languages and city or district scope without changing the scenario', async t => {
   const bodies = [];
   mockFetch(t, async (_url, options) => {
-    bodies.push(JSON.parse(options.body));
-    return Response.json({ mode: 'fallback', explanation: {}, language: JSON.parse(options.body).language });
+    const body = JSON.parse(options.body);
+    bodies.push(body);
+    return Response.json({ mode: 'llm', explanation: { summary: 'One paragraph.', strengths: [], risks: [], recommendations: [] }, language: body.language, district_id: body.district_id ?? null });
   });
-  for (const language of ['ru', 'kk', 'en']) await explainScenario([{ id: 'M12' }], language);
-  assert.deepEqual(bodies.map(({ language, ...scenario }) => scenario), Array.from({ length: 3 }, () => ({ model_version, selections: [{ measure_id: 'M12' }] })));
-  assert.deepEqual(bodies.map(body => body.language), ['ru', 'kk', 'en']);
+  const scopes = [null, 'esil', 'almaty', 'saryarka', 'baikonur', 'nura'];
+  for (const language of ['ru', 'kk', 'en']) {
+    for (const districtId of scopes) {
+      const result = await explainScenario([{ id: 'M12' }], language, { districtId });
+      const apiDistrictId = districtId === 'esil' ? 'yesil' : districtId;
+      assert.deepEqual(bodies.at(-1), {
+        model_version, selections: [{ measure_id: 'M12' }], language,
+        ...(districtId !== null ? { district_id: apiDistrictId } : {})
+      });
+      assert.equal(result.language, language);
+      assert.equal(result.district_id, apiDistrictId);
+      assert.equal(result.explanation.summary, 'One paragraph.');
+    }
+  }
+  assert.equal(bodies.length, 18);
+  await explainScenario([{ id: 'M12' }], 'ru');
+  assert.equal(Object.hasOwn(bodies.at(-1), 'district_id'), false, 'omitted options default to city and omit district_id');
+});
+
+test('scoped explain preserves caller cancellation and request timeout options', async t => {
+  mockFetch(t, (_url, { signal, body }) => new Promise((_resolve, reject) => {
+    assert.equal(JSON.parse(body).district_id, 'yesil');
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  }));
+  await assert.rejects(explainScenario([{ id: 'M12' }], 'kk', { districtId: 'esil', timeoutMs: 5 }), { code: 'REQUEST_TIMEOUT' });
+  const controller = new AbortController();
+  const pending = explainScenario([{ id: 'M12' }], 'en', { districtId: 'esil', signal: controller.signal });
+  controller.abort();
+  await assert.rejects(pending, { name: 'AbortError' });
 });

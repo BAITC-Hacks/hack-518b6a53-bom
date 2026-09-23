@@ -1,4 +1,4 @@
-import { MODEL_VERSION, toSelections } from './model.js';
+import { MODEL_VERSION, toSelections, toApiDistrictId } from './model.js';
 
 export class ApiError extends Error {
   constructor(code, { status = 0, errors = [], cause } = {}) {
@@ -52,4 +52,8 @@ function scenarioBody(decisions) {
 export const getCatalog = (options = {}) => request('catalog', options);
 export const validateScenario = (decisions, options = {}) => request('validate', { ...options, body: scenarioBody(decisions) });
 export const evaluateScenario = (decisions, options = {}) => request('evaluate', { ...options, body: scenarioBody(decisions) });
-export const explainScenario = (decisions, language, options = {}) => request('explain', { timeoutMs: 55000, ...options, body: { ...scenarioBody(decisions), language } });
+export const explainScenario = (decisions, language, { districtId = null, ...options } = {}) => request('explain', {
+  timeoutMs: 55000,
+  ...options,
+  body: { ...scenarioBody(decisions), language, ...(districtId !== null ? { district_id: toApiDistrictId(districtId) } : {}) }
+});

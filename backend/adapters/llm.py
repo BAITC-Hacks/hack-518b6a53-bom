@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from openai import APITimeoutError, AsyncOpenAI
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from backend.services.explanations import (
     ExplanationFacts, ExplanationFailure, ExplanationFailureReason, ExplanationSuccess,
@@ -20,6 +20,18 @@ LANGUAGE_INSTRUCTIONS = {
     "kk": "Write every explanation field in Kazakh. Use Kazakh district names.",
     "en": "Write every explanation field in English. Transliterate district names into English.",
 }
+
+
+class BriefExplanation(BaseModel):
+    """The provider generates one paragraph instead of four report sections."""
+
+    model_config = ConfigDict(extra="forbid")
+    summary: str
+
+    @field_validator("summary")
+    @classmethod
+    def single_paragraph(cls, value: str) -> str:
+        return " ".join(value.replace("\u00b7", " ").split())
 
 
 class OpenAIExplanationAdapter:
@@ -57,8 +69,11 @@ class OpenAIExplanationAdapter:
             self._occupied = True
 
         try:
-            payload = json.dumps(facts.context, ensure_ascii=False)
+            payload = json.dumps(facts.context, ensure_ascii=False, separators=(",", ":"))
             instructions = self._instructions + "\n\n" + LANGUAGE_INSTRUCTIONS[facts.language]
+            generation = {}
+            if self.settings.openai_model == "gpt-6-luna":
+                generation["reasoning"] = {"effort": "none"}
             try:
                 response = await asyncio.wait_for(
                     self.client.responses.parse(
@@ -67,9 +82,10 @@ class OpenAIExplanationAdapter:
                             {"role": "system", "content": instructions},
                             {"role": "user", "content": payload},
                         ],
-                        text_format=ExplanationSchema,
-                        max_output_tokens=self.settings.openai_max_output_tokens,
+                        text_format=BriefExplanation,
+                        max_output_tokens=min(self.settings.openai_max_output_tokens, 900),
                         store=False,
+                        **generation,
                     ),
                     timeout=self.settings.openai_timeout_seconds,
                 )
@@ -98,13 +114,12 @@ class OpenAIExplanationAdapter:
                 model = response.model
                 if parsed is None or not isinstance(model, str) or not model.strip():
                     raise ValueError("Missing parsed output or model")
-                explanation = ExplanationSchema.model_validate(parsed.model_dump())
-                if not explanation.summary.strip() or any(
-                    not item.strip()
-                    for group in (explanation.strengths, explanation.risks, explanation.recommendations)
-                    for item in group
-                ):
+                brief = BriefExplanation.model_validate(parsed.model_dump())
+                if not brief.summary:
                     raise ValueError("Empty explanation field")
+                explanation = ExplanationSchema(
+                    summary=brief.summary, strengths=[], risks=[], recommendations=[],
+                )
             except Exception:
                 # Malformed provider objects may fail at any field access or schema check.
                 self._record(False)

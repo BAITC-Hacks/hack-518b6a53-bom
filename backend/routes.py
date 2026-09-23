@@ -125,7 +125,9 @@ async def explain(
             if message["type"] == "http.disconnect":
                 return
 
-    operation = asyncio.create_task(service.explain(body.model_version, _selections(body), body.language))
+    operation = asyncio.create_task(service.explain(
+        body.model_version, _selections(body), body.language, body.district_id,
+    ))
     disconnect = asyncio.create_task(wait_for_disconnect())
     try:
         done, _ = await asyncio.wait((operation, disconnect), return_when=asyncio.FIRST_COMPLETED)

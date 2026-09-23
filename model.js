@@ -15,6 +15,7 @@ export let HORIZON = 0;
 export let REQUIRED_DECISIONS = 0;
 export let MODEL_VERSION = null;
 export let RULES = null;
+export let SYNERGIES = [];
 export let BASELINE = null;
 export let PRESETS = [];
 let byCode = {};
@@ -56,6 +57,7 @@ export function configureCatalog(catalog) {
   DISTRICTS = freeze(districts);
   MEASURES = freeze(measures);
   RULES = freeze(rules);
+  SYNERGIES = freeze(rules.synergies.map(synergy => ({ first: synergy.first_measure_id, second: synergy.second_measure_id, code: synergy.indicator, bonus: synergy.bonus })));
   BUDGET = rules.budget_limit;
   HORIZON = rules.horizon_quarters;
   REQUIRED_DECISIONS = rules.required_decisions;
@@ -139,6 +141,68 @@ export function calculate(decisions = []) {
   const weakest = Math.min(...districts.map(district => district.score));
   const critical = districts.reduce((sum, district) => sum + district.values.filter(value => value < RULES.critical_threshold).length, 0);
   return { districts, average, weakest, critical, score: RULES.average_weight * average + RULES.minimum_weight * weakest - RULES.critical_penalty * critical, spent: decisions.reduce((sum, decision) => sum + (byMeasure[decision.id]?.cost || 0), 0) };
+}
+
+export function explainScenario(decisions = []) {
+  requireCatalog();
+  if (decisions.length > REQUIRED_DECISIONS) throw new RangeError(`Scenario explanations support at most ${REQUIRED_DECISIONS} decisions.`);
+
+  // One model run per subset. Shapley attribution averages each measure's marginal
+  // effect across all addition orders, sharing synergies and threshold changes.
+  const count = decisions.length;
+  const factorial = [1];
+  for (let index = 1; index <= count; index++) factorial.push(factorial[index - 1] * index);
+  const subsets = Array.from({ length: 2 ** count }, (_, mask) => {
+    const included = decisions.filter((_, index) => mask & (1 << index));
+    return { size: included.length, result: calculate(included) };
+  });
+  const baseline = subsets[0].result;
+  const result = subsets[subsets.length - 1].result;
+  const contributions = decisions.map((decision, index) => {
+    const contribution = {
+      id: decision.id,
+      districtId: byMeasure[decision.id]?.scope === 'city' ? null : decision.districtId || null,
+      cityScoreDelta: 0,
+      districts: DISTRICTS.map(district => ({ id: district.id, scoreDelta: 0, values: INDICATORS.map(() => 0) }))
+    };
+    for (let mask = 0; mask < subsets.length; mask++) {
+      if (mask & (1 << index)) continue;
+      const { size, result: before } = subsets[mask];
+      const after = subsets[mask | (1 << index)].result;
+      const weight = factorial[size] * factorial[count - size - 1] / factorial[count];
+      contribution.cityScoreDelta += (after.score - before.score) * weight;
+      for (let districtIndex = 0; districtIndex < DISTRICTS.length; districtIndex++) {
+        const district = contribution.districts[districtIndex];
+        const prior = before.districts[districtIndex];
+        const next = after.districts[districtIndex];
+        district.scoreDelta += (next.score - prior.score) * weight;
+        for (let indicatorIndex = 0; indicatorIndex < INDICATORS.length; indicatorIndex++) {
+          district.values[indicatorIndex] += (next.values[indicatorIndex] - prior.values[indicatorIndex]) * weight;
+        }
+      }
+    }
+    return contribution;
+  });
+  const synergies = SYNERGIES.flatMap(synergy => {
+    const first = decisions.find(decision => decision.id === synergy.first);
+    if (!first || !decisions.some(decision => decision.id === synergy.second)) return [];
+    if (!DISTRICTS.some(district => district.id === first.districtId)) return [];
+    return [{ ...synergy, districtId: first.districtId }];
+  });
+  const districts = result.districts.map((district, index) => {
+    const indicators = INDICATORS.map((indicator, indicatorIndex) => ({
+      code: indicator.code,
+      before: baseline.districts[index].values[indicatorIndex],
+      after: district.values[indicatorIndex]
+    }));
+    return {
+      id: district.id,
+      delta: district.score - baseline.districts[index].score,
+      critical: indicators.filter(indicator => indicator.after < RULES.critical_threshold),
+      lowest: indicators.reduce((lowest, indicator) => indicator.after < lowest.after ? indicator : lowest)
+    };
+  });
+  return { result, contributions, synergies, districts };
 }
 
 export function toSelections(decisions) {

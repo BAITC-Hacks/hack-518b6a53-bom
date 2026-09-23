@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 from pydantic import ValidationError
 
 from backend.adapters.dataset import load_dataset
-from backend.adapters.llm import OpenAIExplanationAdapter
+from backend.adapters.llm import BriefExplanation, OpenAIExplanationAdapter
 from backend.domain.models import Selection
 from backend.domain.simulation import simulate
 from backend.main import app
@@ -47,10 +47,7 @@ def request_payload(service: ScenarioService) -> dict:
 def provider_response(summary: str = "A calculated explanation") -> SimpleNamespace:
     return SimpleNamespace(
         status="completed", output=[], model="test-response-model",
-        output_parsed=ExplanationSchema(
-            summary=summary, strengths=["One strength"], risks=["One risk"],
-            recommendations=["One recommendation"],
-        ),
+        output_parsed=BriefExplanation(summary=summary),
     )
 
 
@@ -93,6 +90,42 @@ class NumericRegressionTests(unittest.TestCase):
         })
 
 
+class CompactContextTests(unittest.TestCase):
+    def setUp(self):
+        self.service = scenarios()
+        self.report = self.service.evaluate(
+            self.service.dataset.model_version, self.service.dataset.presets[0].selections,
+        )
+
+    def test_city_context_contains_aggregates_without_full_indicator_matrix(self):
+        context = build_ai_context(self.report, self.service.dataset)
+        self.assertIsNone(context["scope"]["district_id"])
+        self.assertEqual(len(context["districts"]), 5)
+        self.assertIn("average", context["after"])
+        self.assertIn("minimum", context["after"])
+        self.assertEqual(len(context["top_changes"]), 4)
+        self.assertEqual(len(context["weak_spots"]), 3)
+        self.assertNotIn("indicators", context)
+        self.assertNotIn("indicator_changes_after_clip", context)
+        self.assertLess(len(json.dumps(context, ensure_ascii=False)), 7000)
+        self.assertEqual(context["after"]["score"], 56.54)
+        self.assertAlmostEqual(self.report.after.score, 56.54307)
+
+    def test_district_context_filters_indicators_synergies_and_current_decisions(self):
+        context = build_ai_context(self.report, self.service.dataset, "nura")
+        nura = next(district for district in self.report.after.districts if district.id == "nura")
+        self.assertEqual(context["scope"]["district_id"], "nura")
+        self.assertEqual(context["after"]["score"], round(nura.district_score, 2))
+        self.assertEqual(len(context["indicators"]), 10)
+        self.assertNotIn("districts", context)
+        self.assertNotIn("average", context["after"])
+        for field in ("indicators", "top_changes", "weak_spots", "synergies"):
+            self.assertTrue(all(item["district_id"] == "nura" for item in context[field]))
+        self.assertEqual({item["id"] for item in context["decisions"]}, {"M7", "M8", "M10", "M12"})
+        self.assertEqual(len(context["recommendation_catalog"]), 14)
+        self.assertLess(len(json.dumps(context, ensure_ascii=False)), 7000)
+
+
 class SchemaTests(unittest.TestCase):
     def setUp(self):
         self.payload = request_payload(scenarios())
@@ -113,6 +146,15 @@ class SchemaTests(unittest.TestCase):
             ExplainRequest.model_validate({
                 **self.payload, "selections": [{"measure_id": "M12", "district_id": None}],
             })
+        with self.assertRaises(ValidationError):
+            ExplainRequest.model_validate({**self.payload, "district_id": None})
+
+    def test_explanation_scope_is_separate_from_numerical_request(self):
+        scoped = {**self.payload, "district_id": "nura"}
+        self.assertEqual(ExplainRequest.model_validate(scoped).district_id, "nura")
+        self.assertIsNone(ExplainRequest.model_validate(self.payload).district_id)
+        with self.assertRaises(ValidationError):
+            ScenarioRequest.model_validate(scoped)
 
     def test_cleans_forbidden_character_in_every_explanation_field(self):
         value = "left" + chr(183) + "right"
@@ -184,6 +226,7 @@ class BackendHTTPTests(unittest.IsolatedAsyncioTestCase):
                 })
                 self.assertEqual(status, 200)
                 self.assertEqual(result["language"], language)
+                self.assertIsNone(result["district_id"])
                 self.assertEqual(result["mode"], "fallback")
                 self.assertIsNone(result["llm_model"])
                 self.assertEqual(result["warning"]["code"], "AI_NOT_CONFIGURED")
@@ -215,15 +258,66 @@ class BackendHTTPTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_language_reaches_adapter_and_is_echoed_with_success(self):
         adapter = SimpleNamespace(explain=AsyncMock(return_value=ExplanationSuccess(
-            provider_response("Қала көрсеткіштері өсті").output_parsed, "test-model",
+            ExplanationSchema(summary="Қала көрсеткіштері өсті", strengths=[], risks=[], recommendations=[]), "test-model",
         )))
         app.state.explanation_service = ExplanationService(app.state.scenario_service, adapter)
         status, result = await self.request("POST", "/api/v1/explain", {**self.payload, "language": "kk"})
         self.assertEqual((status, result["language"], result["mode"]), (200, "kk", "llm"))
         facts = adapter.explain.await_args.args[0]
         self.assertEqual(facts.language, "kk")
-        self.assertAlmostEqual(facts.context["after"]["score"], 56.54307)
+        self.assertEqual(facts.context["after"]["score"], 56.54)
+        self.assertAlmostEqual(facts.report.after.score, 56.54307)
         self.assertEqual(result["scenario_key"], facts.report.scenario_key)
+
+    async def test_unknown_district_rejected_before_provider(self):
+        adapter = SimpleNamespace(explain=AsyncMock())
+        app.state.explanation_service = ExplanationService(app.state.scenario_service, adapter)
+        status, result = await self.request("POST", "/api/v1/explain", {
+            **self.payload, "district_id": "unknown-district",
+        })
+        self.assertEqual(status, 422)
+        self.assertEqual(result["errors"][0]["code"], "UNKNOWN_DISTRICT")
+        self.assertEqual(result["errors"][0]["path"], "district_id")
+        adapter.explain.assert_not_awaited()
+
+    async def test_every_district_has_its_own_compact_localized_fallback(self):
+        for district_id in app.state.scenario_service.dataset.districts:
+            with self.subTest(district=district_id):
+                status, result = await self.request("POST", "/api/v1/explain", {
+                    **self.payload, "language": "en", "district_id": district_id,
+                })
+                self.assertEqual((status, result["district_id"], result["language"]), (200, district_id, "en"))
+                self.assertEqual(result["mode"], "fallback")
+                self.assertNotIn("\n", result["explanation"]["summary"])
+                for field in ("strengths", "risks", "recommendations"):
+                    self.assertEqual(result["explanation"][field], [])
+                if district_id == "nura":
+                    self.assertIn("Nura", result["explanation"]["summary"])
+                    self.assertNotIn("Saryarka", result["explanation"]["summary"])
+
+    async def test_scoped_success_echoes_scope_and_forwards_only_relevant_measures(self):
+        adapter = SimpleNamespace(explain=AsyncMock(return_value=ExplanationSuccess(
+            ExplanationSchema(summary="Nura analysis", strengths=[], risks=[], recommendations=[]), "test-model",
+        )))
+        app.state.explanation_service = ExplanationService(app.state.scenario_service, adapter)
+        status, result = await self.request("POST", "/api/v1/explain", {
+            **self.payload, "language": "en", "district_id": "nura",
+        })
+        self.assertEqual((status, result["district_id"], result["mode"]), (200, "nura", "llm"))
+        facts = adapter.explain.await_args.args[0]
+        self.assertEqual(facts.district_id, "nura")
+        self.assertEqual({item["id"] for item in facts.context["decisions"]}, {"M7", "M8", "M10", "M12"})
+
+    async def test_untouched_district_fallback_does_not_claim_a_change(self):
+        selections = [
+            {"measure_id": "M11", "district_id": "nura"} if item["measure_id"] == "M12" else item
+            for item in self.payload["selections"]
+        ]
+        status, result = await self.request("POST", "/api/v1/explain", {
+            **self.payload, "selections": selections, "language": "en", "district_id": "yesil",
+        })
+        self.assertEqual(status, 200)
+        self.assertIn("Yesil: the indicators did not change", result["explanation"]["summary"])
 
     async def test_ai_unconfigured_does_not_block_catalog_or_readiness(self):
         status, result = await self.request("GET", "/health/ready")
@@ -318,6 +412,33 @@ class OpenAIAdapterTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(json.loads(arguments["input"][1]["content"]), self.context)
             self.assertFalse(arguments["store"])
             self.assertEqual(arguments["model"], "test-model")
+
+    async def test_luna_uses_compact_schema_no_reasoning_and_bounded_output(self):
+        parse = AsyncMock(return_value=provider_response("First line\n\nSecond line"))
+        adapter = OpenAIExplanationAdapter(
+            Settings(DATA_DIR, "INFO", "test-key", "gpt-6-luna", 45, 2000),
+            SimpleNamespace(responses=SimpleNamespace(parse=parse)),
+        )
+        result = await adapter.explain(self.facts)
+        self.assertIsInstance(result, ExplanationSuccess)
+        arguments = parse.await_args.kwargs
+        self.assertEqual(arguments["model"], "gpt-6-luna")
+        self.assertEqual(arguments["reasoning"], {"effort": "none"})
+        self.assertEqual(arguments["max_output_tokens"], 900)
+        self.assertEqual(set(arguments["text_format"].model_json_schema()["properties"]), {"summary"})
+        self.assertEqual(result.explanation.summary, "First line Second line")
+        self.assertEqual(result.explanation.strengths, [])
+        self.assertEqual(result.explanation.risks, [])
+        self.assertEqual(result.explanation.recommendations, [])
+
+    async def test_smaller_configured_output_limit_is_respected(self):
+        parse = AsyncMock(return_value=provider_response())
+        adapter = OpenAIExplanationAdapter(
+            Settings(DATA_DIR, "INFO", "test-key", "gpt-6-luna", 45, 600),
+            SimpleNamespace(responses=SimpleNamespace(parse=parse)),
+        )
+        await adapter.explain(self.facts)
+        self.assertEqual(parse.await_args.kwargs["max_output_tokens"], 600)
 
     async def test_busy_slot_returns_immediately_and_releases_after_completion(self):
         entered, release = asyncio.Event(), asyncio.Event()

@@ -38,5 +38,5 @@ def load_settings() -> Settings:
         openai_api_key=os.getenv("OPENAI_API_KEY") or None,
         openai_model=os.getenv("OPENAI_MODEL") or None,
         openai_timeout_seconds=_positive_int("OPENAI_TIMEOUT_SECONDS", 45),
-        openai_max_output_tokens=_positive_int("OPENAI_MAX_OUTPUT_TOKENS", 2000),
+        openai_max_output_tokens=_positive_int("OPENAI_MAX_OUTPUT_TOKENS", 900),
     )

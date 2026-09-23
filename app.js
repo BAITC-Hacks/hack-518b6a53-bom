@@ -1,4 +1,4 @@
-import { INDICATORS, DISTRICTS, MEASURES, BUDGET, HORIZON, BASELINE, RULES, REQUIRED_DECISIONS, configureCatalog, fromServerSnapshot, calculate, getAdditionIssue, getScenarioIssue } from './model.js';
+import { INDICATORS, DISTRICTS, MEASURES, BUDGET, HORIZON, BASELINE, RULES, REQUIRED_DECISIONS, configureCatalog, fromServerSnapshot, toApiDistrictId, calculate, explainScenario as explainLocalScenario, getAdditionIssue, getScenarioIssue } from './model.js';
 import { getCatalog, validateScenario, evaluateScenario, explainScenario } from './api.js';
 import { MAP_DISTRICTS, MAP_RIVER, MAP_LAKES } from './map-geometry.js';
 import { layoutMapObjects, mapLabelPosition, projectMapPoint } from './map-objects.js';
@@ -8,12 +8,13 @@ import { translate as t, formatNumber, groupName, measureName, districtName, ind
 setLanguage(loadLanguage());
 
 const $ = selector => document.querySelector(selector);
-const state = { decisions: [], selectedMeasureId: null, focusedDistrictId: null, filter: 'Все', draggingId: null, hoverTarget: null, indicatorsOpen: false, reportTab: 'city', status: null, statusError: false, ready: false, validation: 'idle', canEvaluate: false, evaluating: false, evaluation: null, result: null, explanations: {}, aiStatus: 'idle', aiError: null, narrativePage: 0 };
+const state = { decisions: [], selectedMeasureId: null, focusedDistrictId: null, filter: 'Все', draggingId: null, hoverTarget: null, indicatorsOpen: false, reportTab: 'city', status: null, statusError: false, ready: false, validation: 'idle', canEvaluate: false, evaluating: false, evaluation: null, result: null, explanations: {}, aiErrors: {}, reportPresentation: 'default', narrativePage: 0, inspectedObject: null };
 let measureById = {};
 let districtById = {};
 let validationRequest = 0, evaluationRequest = 0, explanationRequest = 0;
 let validationController, evaluationController, explanationController;
 let explanationFlight = null;
+let explanationCache = { key: null, value: null };
 let narrativeSections = [], narrativePages = [];
 let paginationFrame;
 let toastTimer;
@@ -52,12 +53,15 @@ function renderScenarioObjects() {
       element.dataset.objectKey = item.key;
       element.dataset.district = item.districtId;
       element.dataset.measureId = item.measureId;
-      element.setAttribute('role', 'img');
-      element.innerHTML = `<title></title><g class="map-object-art">${renderMapObject(item.measureId)}</g>`;
+      element.setAttribute('role', 'button');
+      element.setAttribute('tabindex', '0');
+      element.setAttribute('aria-haspopup', 'dialog');
+      element.setAttribute('aria-controls', 'objectDialog');
+      element.innerHTML = `<title></title><rect class="map-object-hit" x="-23" y="-40" width="46" height="46" rx="5"/><g class="map-object-art">${renderMapObject(item.measureId)}</g>`;
     }
     const label = `${measureName(item.measureId)} — ${districtName(item.districtId)}`;
-    element.setAttribute('aria-label', label);
-    element.querySelector('title').textContent = label;
+    element.setAttribute('aria-label', t('objects.open', { name: measureName(item.measureId), district: districtName(item.districtId) }));
+    element.querySelector('title').textContent = `${label}. ${t('objects.hint')}`;
     element.setAttribute('transform', `translate(${item.x} ${item.y}) scale(${item.scale})`);
     element.classList.toggle('muted', Boolean(state.focusedDistrictId && state.focusedDistrictId !== item.districtId));
     // Keep existing nodes so focusing a district does not replay their entrance animation.
@@ -114,8 +118,8 @@ function invalidateResult() {
   state.evaluation = null;
   state.result = null;
   state.explanations = {};
-  state.aiStatus = 'idle';
-  state.aiError = null;
+  state.aiErrors = {};
+  state.reportPresentation = 'default';
   state.narrativePage = 0;
 }
 async function validateDraft() {
@@ -140,6 +144,43 @@ async function validateDraft() {
 }
 function current() { return calculate(state.decisions); }
 function districtResult(result, id) { return result.districts.find(district => district.id === id); }
+function explanation() {
+  const key = JSON.stringify(state.decisions);
+  if (explanationCache.key !== key) explanationCache = { key, value: explainLocalScenario(state.decisions) };
+  return explanationCache.value;
+}
+
+function synergyMarkup(synergies) {
+  return synergies.map(item => `<div class="synergy-item"><strong>${text('insights.synergyPair', { first: measureName(item.first), second: measureName(item.second) })}</strong><p>${text('insights.synergyDetail', { district: districtName(item.districtId), indicator: indicatorName(item.code), value: signed(item.bonus, 1) })}</p></div>`).join('');
+}
+
+function renderObjectDetails() {
+  const item = state.inspectedObject;
+  if (!item) return;
+  const measure = measureById[item.measureId];
+  const analysis = explanation();
+  const contribution = analysis.contributions.find(entry => entry.id === item.measureId)?.districts.find(entry => entry.id === item.districtId);
+  if (!contribution) return;
+  const synergies = analysis.synergies.filter(entry => entry.districtId === item.districtId && [entry.first, entry.second].includes(item.measureId));
+  $('#objectDetails').innerHTML = `<div class="object-detail-hero"><svg viewBox="-28 -44 56 54" class="object-illustration" aria-hidden="true">${renderMapObject(item.measureId)}</svg><div><span class="object-kicker">${measure.id} — ${escapeHTML(groupName(measure.group))}</span><h2 id="objectTitle">${escapeHTML(measureName(measure.id))}</h2><p>${text('objects.location', { district: districtName(item.districtId) })}</p><span class="measure-scope measure-scope--${measure.scope}">${text(measure.scope === 'city' ? 'ui.wholeCity' : 'ui.oneDistrict')}</span></div></div>
+    <div class="object-facts"><div><span>${text('objects.cost')}</span><strong>${text('ui.units', { value: format(measure.cost, 0) })}</strong></div><div><span>${text('objects.launch')}</span><strong>${text('objects.launchValue', { value: measure.lag })}</strong></div></div>
+    ${measure.scope === 'city' ? `<p class="object-note">${text('objects.cityCostNote')}</p>` : ''}
+    <section class="object-effects"><div class="object-section-heading"><h3>${text('objects.effectTitle')}</h3><span>${text('objects.effectPeriod', { value: HORIZON })}</span></div>
+      ${INDICATORS.map((indicator, index) => Math.abs(contribution.values[index]) < 1e-9 ? '' : `<div class="object-effect"><span>${escapeHTML(indicatorName(indicator.code))}</span><strong class="${contribution.values[index] < 0 ? 'negative' : 'positive'}">${signed(contribution.values[index])}</strong></div>`).join('')}
+      <div class="object-score"><span>${text('objects.score')}</span><strong>${signed(contribution.scoreDelta)}</strong></div><p class="object-note">${text('objects.effectNote')}</p>
+    </section>${synergies.length ? `<section class="object-synergies"><h3>${text('objects.connections')}</h3>${synergyMarkup(synergies)}<p class="object-note">${text('insights.synergyIncluded')}</p></section>` : ''}<p class="object-note object-disclaimer">${text('objects.modelNote')}</p>`;
+}
+
+function openObjectDetails(key) {
+  const item = mapObjects.find(object => object.key === key);
+  if (!item) return;
+  state.inspectedObject = item;
+  state.indicatorsOpen = false;
+  renderIndicators();
+  clearPreview();
+  renderObjectDetails();
+  $('#objectDialog').showModal();
+}
 
 function renderCatalog() {
   const visible = MEASURES.filter(measure => state.filter === 'Все' || measure.group === state.filter);
@@ -309,19 +350,75 @@ function clearPreview() {
   $('#cityMap').classList.remove('dragging');
 }
 
-function reportInsight(result) {
-  const ranked = [...result.districts].sort((a, b) => (b.score - b.baselineScore) - (a.score - a.baselineScore));
-  const weakest = [...result.districts].sort((a, b) => a.score - b.score)[0];
-  const best = ranked[0];
-  return { weakest, best, mostImproved: best.score - best.baselineScore };
-}
 function reportMetricRows(result, districtId = null) {
   const after = districtId ? districtResult(result, districtId).values : INDICATORS.map((_, index) => result.districts.reduce((sum, district) => sum + district.population * district.values[index], 0));
   const before = districtId ? districtById[districtId].values : INDICATORS.map((_, index) => DISTRICTS.reduce((sum, district) => sum + district.population * district.values[index], 0));
   return INDICATORS.map((item, index) => `<div class="report-line"><span class="report-line-name">${item.code} / ${escapeHTML(indicatorName(item.code))}</span><span class="report-line-track"><i style="width:${after[index]}%"></i></span><b class="${after[index] - before[index] < 0 ? 'negative' : 'positive'}">${signed(after[index] - before[index], 1)}</b></div>`).join('');
 }
-function reportActions(decisions) {
-  return `<div class="report-actions">${decisions.map(decision => `<span title="${escapeHTML(measureName(decision.id))}">${decision.id}<small>${escapeHTML(getTargetName(decision))}</small></span>`).join('') || `<span>${text('report.noMeasures')}</span>`}</div>`;
+function reportAnalysis(selected) {
+  const analysis = explanation();
+  const city = selected === 'city';
+  const result = state.result;
+  const best = [...analysis.districts].sort((a, b) => b.delta - a.delta)[0];
+  const target = city ? best : analysis.districts.find(item => item.id === selected);
+  const districtContribution = (entry, id) => entry.districts.find(item => item.id === id);
+  const contributionValue = entry => city ? entry.cityScoreDelta : districtContribution(entry, selected).scoreDelta;
+  const applied = analysis.contributions.filter(entry => city || !entry.districtId || entry.districtId === selected).sort((a, b) => contributionValue(b) - contributionValue(a));
+  const drivers = analysis.contributions.filter(entry => districtContribution(entry, target.id).scoreDelta > 1e-9)
+    .sort((a, b) => districtContribution(b, target.id).scoreDelta - districtContribution(a, target.id).scoreDelta).slice(0, 2).map(entry => measureName(entry.id));
+  const equalDistricts = city && analysis.districts.every(item => Math.abs(item.delta - best.delta) < 1e-9);
+  const lead = equalDistricts ? t('insights.allEqual', { value: signed(best.delta) }) : t(city ? 'insights.cityLead' : 'insights.districtLead', { district: districtName(target.id), value: signed(target.delta) });
+  const maxContribution = Math.max(...applied.map(entry => Math.abs(contributionValue(entry))), .01);
+  const total = city ? result.score - BASELINE.score : target.delta;
+  const synergies = analysis.synergies.filter(item => city || item.districtId === selected);
+  const relevantDistricts = analysis.districts.filter(item => city || item.id === selected);
+  const critical = relevantDistricts.flatMap(item => item.critical.map(risk => ({ ...risk, districtId: item.id }))).sort((a, b) => a.after - b.after);
+  const risks = critical.length ? critical : relevantDistricts.map(item => ({ ...item.lowest, districtId: item.id })).sort((a, b) => a.after - b.after).slice(0, 1);
+  return `<section class="report-card report-analysis" data-pane="analysis"><h2>${text('insights.title')}</h2>
+    <div class="insight-summary"><p>${escapeHTML(lead)}</p><p>${escapeHTML(drivers.length ? t('insights.drivers', { measures: drivers.join(', ') }) : t('insights.noDrivers'))}</p></div>
+    <section class="insight-section"><h3>${text('insights.contributions')}</h3><p class="insight-caption">${text(city ? 'insights.cityContribution' : 'insights.districtContribution')}</p>
+      <div class="contribution-list">${applied.map(entry => {
+        const value = contributionValue(entry);
+        const changes = INDICATORS.map((indicator, index) => ({ code: indicator.code, value: city ? entry.districts.reduce((sum, item) => sum + item.values[index] * districtById[item.id].population, 0) : districtContribution(entry, selected).values[index] })).filter(item => Math.abs(item.value) > 1e-9).sort((a, b) => Math.abs(b.value) - Math.abs(a.value)).slice(0, 2);
+        return `<div class="contribution-item"><div><strong>${escapeHTML(measureName(entry.id))}</strong><small>${entry.id} — ${escapeHTML(getTargetName(entry))}</small><small>${text(city ? 'insights.cityIndicatorChanges' : 'insights.districtIndicatorChanges', { changes: changes.map(item => `${indicatorName(item.code)} ${signed(item.value)}`).join(' — ') })}</small></div><b class="${value < 0 ? 'negative' : 'positive'}">${signed(value)}</b><span class="contribution-track" aria-hidden="true"><i class="${value < 0 ? 'negative' : ''}" style="width:${Math.abs(value) / maxContribution * 100}%"></i></span></div>`;
+      }).join('') || `<p class="insight-caption">${text('insights.noDrivers')}</p>`}</div>
+      <div class="contribution-total"><span>${text('insights.total')}</span><strong>${signed(total)}</strong></div>
+      <details class="insight-method"><summary>${text('insights.method')}</summary><p>${text('insights.methodText')}</p>${city ? `<p>${text('insights.scoreFormula')}</p>` : ''}</details>
+    </section>
+    <section class="insight-section"><h3>${text('insights.synergy')}</h3>${synergies.length ? `${synergyMarkup(synergies)}<p class="insight-caption">${text('insights.synergyIncluded')}</p>` : `<p class="insight-caption">${text('insights.noSynergy')}</p>`}</section>
+    <section class="insight-section"><h3>${text('insights.remaining')}</h3>${!critical.length ? `<p class="insight-caption">${text('insights.noCritical')}</p>` : ''}${risks.map(risk => {
+      const delta = risk.after - risk.before;
+      return `<div class="insight-risk"><span class="risk-label ${risk.after < RULES.critical_threshold ? 'critical' : ''}">${text(risk.after < RULES.critical_threshold ? 'insights.critical' : 'insights.lowest')}</span><strong>${text('insights.riskItem', { district: districtName(risk.districtId), indicator: indicatorName(risk.code) })}</strong><div><b>${text('insights.beforeAfter', { before: format(risk.before, 1), after: format(risk.after, 1) })}</b><span>${Math.abs(delta) < 1e-9 ? text('insights.unchanged') : text(delta > 0 ? 'insights.improved' : 'insights.worsened', { value: signed(delta, 1) })}</span></div></div>`;
+    }).join('')}</section>
+    <p class="insight-footer">${text('insights.budget', { spent: format(result.spent, 0), budget: BUDGET })} ${text('insights.timing', { value: HORIZON })}</p>
+  </section>`;
+}
+function reportScopeKey(language = getLanguage(), district = state.reportTab) {
+  return language + ':' + district;
+}
+function defaultReportSections(selected) {
+  const template = document.createElement('template');
+  template.innerHTML = reportAnalysis(selected);
+  const sections = [];
+  let heading = '';
+  const addBlock = element => {
+    if (element.matches('h2')) return;
+    if (element.matches('h3, .insight-section > .insight-caption')) {
+      heading += element.outerHTML;
+    } else if (element.matches('.insight-section, .contribution-list')) {
+      [...element.children].forEach(addBlock);
+    } else if (element.matches('details')) {
+      const title = element.querySelector('summary').textContent;
+      const paragraphs = [...element.querySelectorAll('p')].map(item => item.textContent).join(' ');
+      sections.push({ title, body: paragraphs });
+    } else {
+      sections.push({ html: heading + element.outerHTML });
+      heading = '';
+    }
+  };
+  [...template.content.firstElementChild.children].forEach(addBlock);
+  if (heading) sections.push({ html: heading });
+  return sections;
 }
 function renderReportContent() {
   const result = state.result;
@@ -329,38 +426,24 @@ function renderReportContent() {
   const selected = state.reportTab;
   const city = selected === 'city';
   const district = city ? null : districtResult(result, selected);
-  const { weakest, best, mostImproved } = reportInsight(result);
-  let strengths, risks, consequence;
-  let applied = state.decisions;
-  if (city) {
-    strengths = t('report.cityStrength', { name: districtName(best.id), value: signed(mostImproved) });
-    risks = `${t('report.cityRisk', { name: districtName(weakest.id), value: format(weakest.score) })} ${result.critical ? t('report.criticalCount', { value: format(result.critical, 0) }) : t('report.noCritical')}`;
-    consequence = t('report.cityConsequences', { spent: format(result.spent, 0), budget: BUDGET });
-  } else {
-    const changed = INDICATORS.map((indicator, index) => ({ ...indicator, delta: district.values[index] - districtById[selected].values[index], value: district.values[index] }));
-    const strongest = [...changed].sort((a, b) => b.delta - a.delta)[0];
-    const lowest = [...changed].sort((a, b) => a.value - b.value)[0];
-    strengths = strongest.delta > 0 ? t('report.districtStrength', { name: indicatorName(strongest.code), value: signed(strongest.delta, 1) }) : t('report.noDistrictChange');
-    risks = `${t('report.districtRisk', { name: indicatorName(lowest.code), value: format(lowest.value, 1) })}${lowest.value < RULES.critical_threshold ? ` ${t('report.belowCritical', { value: RULES.critical_threshold })}` : ''}`;
-    consequence = t('report.districtConsequences', { value: signed(district.score - district.baselineScore), population: format(district.population * 100, 0) });
-    applied = state.decisions.filter(decision => !decision.districtId || decision.districtId === selected);
-  }
-  const explanation = city && state.explanations[getLanguage()];
-  if (explanation) {
-    const content = explanation.explanation;
-    narrativeSections = [{ title: t('report.summary'), body: content.summary },
-      ...content.strengths.map(body => ({ title: t('report.strength'), body })),
-      ...content.risks.map(body => ({ title: t('report.risk'), body })),
-      ...content.recommendations.map(body => ({ title: t('report.recommendations'), body }))];
-  } else if (city) {
-    narrativeSections = [];
-  } else {
-    narrativeSections = [{ title: t('report.strength'), body: strengths }, { title: t('report.risk'), body: risks }, { title: t('report.consequences'), body: consequence }];
-  }
-  const aiMessage = !city ? '' : state.aiStatus === 'loading' ? 'network.aiLoading' : state.aiStatus === 'error' ? (state.aiError?.key || 'network.requestFailed') : explanation?.mode === 'fallback' ? 'network.fallback' : '';
-  const retryAI = city && (state.aiStatus === 'error' || explanation?.mode === 'fallback');
+  const key = reportScopeKey();
+  const cached = state.explanations[key];
+  const showingAI = state.reportPresentation === 'ai' && Boolean(cached);
+  const loading = explanationFlight?.key === key;
+  const error = state.aiErrors[key];
+  narrativeSections = showingAI
+    ? [{ title: '', body: cached.explanation.summary }]
+    : defaultReportSections(selected);
+  const message = loading ? 'network.aiLoading' : explanationFlight && !cached ? 'network.aiBusy' : error?.key;
+  const disabled = Boolean(explanationFlight && !cached);
   const stats = city ? [[t('report.average'), format(result.average)], [t('report.minimum'), format(result.weakest)], [t('report.critical'), format(result.critical, 0)]] : [[t('report.current'), format(district.baselineScore)], [t('report.forecast'), format(district.score)], [t('report.change'), signed(district.score - district.baselineScore)]];
-  $('#reportContent').innerHTML = `<section class="report-card" data-pane="metrics"><h2>${escapeHTML(city ? t('ui.wholeCity') : districtName(district.id))}</h2><div class="report-stat-grid">${stats.map(([name, value]) => `<div class="report-stat"><span>${escapeHTML(name)}</span><strong>${value}</strong></div>`).join('')}</div><div class="report-metrics">${reportMetricRows(result, city ? null : selected)}</div></section><section class="report-card" data-pane="analysis"><h2>${text('report.changesTitle')}</h2><div class="analysis-status ${aiMessage ? '' : 'hidden'}" role="status"><span>${aiMessage ? text(aiMessage) : ''}</span>${retryAI ? `<button type="button" class="retry-button" data-retry-ai>${text('network.retry')}</button>` : ''}</div><div class="narrative-page" id="narrativePage" aria-live="polite"></div><nav class="report-pagination hidden" id="reportPagination" aria-label="${text('report.pages')}"><button type="button" data-page-step="-1" aria-label="${text('report.previous')}">←</button><span id="reportPageNumber"></span><button type="button" data-page-step="1" aria-label="${text('report.next')}">→</button></nav>${reportActions(applied)}</section>`;
+  $('#reportContent').innerHTML = `<section class="report-card" data-pane="metrics"><h2>${escapeHTML(city ? t('ui.wholeCity') : districtName(district.id))}</h2><div class="report-stat-grid">${stats.map(([name, value]) => `<div class="report-stat"><span>${escapeHTML(name)}</span><strong>${value}</strong></div>`).join('')}</div><div class="report-metrics">${reportMetricRows(result, city ? null : selected)}</div></section>
+    <section class="report-card report-analysis" data-pane="analysis" aria-busy="${loading}"><h2>${text(showingAI ? 'report.aiTitle' : 'insights.title')}</h2>
+      <div class="analysis-status ${message ? '' : 'hidden'}" role="status">${message ? text(message) : ''}</div>
+      <div class="narrative-page" id="narrativePage" aria-live="polite"></div>
+      <nav class="report-pagination hidden" id="reportPagination" aria-label="${text('report.pages')}"><button type="button" data-page-step="-1" aria-label="${text('report.previous')}">←</button><span id="reportPageNumber"></span><button type="button" data-page-step="1" aria-label="${text('report.next')}">→</button></nav>
+      <div class="report-ai-controls">${showingAI ? `<button type="button" class="report-default-button" data-default-report>${text('report.defaultReport')}</button>` : `<button type="button" class="report-ai-button" data-request-ai ${disabled ? 'disabled' : ''}>${disabled ? '<span class="ai-spinner" aria-hidden="true"></span>' : ''}${text(loading ? 'network.aiLoading' : disabled ? 'network.aiBusy' : cached ? 'report.showAI' : 'report.requestAI')}</button>`}</div>
+    </section>`;
   narrativeObserver.disconnect();
   narrativeObserver.observe($('#narrativePage'));
   queuePagination();
@@ -374,9 +457,19 @@ function paginateNarrative() {
   if (!host || host.clientHeight < 30 || !host.clientWidth) return;
   const pages = [];
   let page = '';
-  const fragment = (title, words) => `<div class="report-narrative"><strong>${escapeHTML(title)}</strong><p>${escapeHTML(words.join(' '))}</p></div>`;
+  const fragment = (title, words) => `<div class="report-narrative">${title ? `<strong>${escapeHTML(title)}</strong>` : ''}<p>${escapeHTML(words.join(' '))}</p></div>`;
   for (const section of narrativeSections) {
-    const words = section.body.trim().split(/\s+/u).filter(Boolean);
+    let body = section.body;
+    if (section.html) {
+      host.innerHTML = page + section.html;
+      if (host.scrollHeight <= host.clientHeight) { page += section.html; continue; }
+      if (page) { pages.push(page); page = ''; }
+      host.innerHTML = section.html;
+      if (host.scrollHeight <= host.clientHeight) { page = section.html; continue; }
+      // Very short viewports still show every word of an oversized detail card.
+      body = host.innerText;
+    }
+    const words = body.trim().split(/\s+/u).filter(Boolean);
     let offset = 0;
     while (offset < words.length) {
       let low = 0, high = words.length - offset;
@@ -453,51 +546,46 @@ async function openReport() {
   state.evaluating = false;
   renderPlan();
   state.reportTab = 'city';
+  state.reportPresentation = 'default';
   state.narrativePage = 0;
   $('#planningView').classList.add('hidden');
   $('#reportView').classList.remove('hidden');
   renderReport();
-  void requestExplanation();
 }
-async function requestExplanation(force = false) {
+async function requestExplanation() {
   if (!state.evaluation) return;
   const language = getLanguage();
+  const districtId = state.reportTab === 'city' ? null : state.reportTab;
+  const key = reportScopeKey();
   const scenarioKey = state.evaluation.scenario_key;
-  if (force) delete state.explanations[language];
-  if (state.explanations[language] && !force) {
-    state.aiStatus = 'ready';
+  if (state.explanations[key]) {
+    state.reportPresentation = 'ai';
+    state.narrativePage = 0;
     renderReportContent();
     return;
   }
-  // Back/return and language switches share the active request. The next
-  // requested language starts after it settles, preserving the API's AI slot.
-  if (explanationFlight?.scenarioKey === scenarioKey) {
-    state.aiStatus = 'loading';
-    renderReportContent();
-    return;
-  }
+  if (explanationFlight) return;
   const request = ++explanationRequest;
-  explanationFlight = { scenarioKey, language, request };
+  explanationFlight = { scenarioKey, language, districtId, key, request };
   explanationController = new AbortController();
-  state.aiStatus = 'loading';
-  state.aiError = null;
+  state.reportPresentation = 'ai';
+  state.narrativePage = 0;
+  delete state.aiErrors[key];
   renderReportContent();
   try {
-    const result = await explainScenario(state.decisions, language, { signal: explanationController.signal });
+    const result = await explainScenario(state.decisions, language, { districtId, signal: explanationController.signal });
     if (request !== explanationRequest || scenarioKey !== state.evaluation?.scenario_key) return;
-    if (result.scenario_key !== scenarioKey || result.language !== language) throw new Error('Mismatched explanation');
-    state.explanations[language] = result;
-    if (language === getLanguage()) state.aiStatus = 'ready';
+    if (result.scenario_key !== scenarioKey || result.language !== language || result.district_id !== (districtId ? toApiDistrictId(districtId) : null)) throw new Error('Mismatched explanation');
+    if (result.mode === 'llm' && result.explanation?.summary?.trim()) state.explanations[key] = result;
+    else state.aiErrors[key] = { key: 'network.fallback' };
   } catch (error) {
     if (request !== explanationRequest || error.name === 'AbortError') return;
-    if (language === getLanguage()) { state.aiStatus = 'error'; state.aiError = apiIssue(error); }
+    state.aiErrors[key] = apiIssue(error);
   } finally {
     if (explanationFlight?.request === request) explanationFlight = null;
   }
-  if (request === explanationRequest) {
-    if (language !== getLanguage() && !$('#reportView').classList.contains('hidden')) void requestExplanation();
-    else renderReportContent();
-  }
+  // Results remain cached only for the requested language and territory.
+  if (request === explanationRequest) renderReportContent();
 }
 
 function localizeShell() {
@@ -520,7 +608,9 @@ function changeLanguage(language) {
   renderStatus();
   if (previewTarget) renderPreview(previewTarget.id, previewTarget.districtId);
   state.narrativePage = 0;
-  if (!$('#reportView').classList.contains('hidden')) { renderReport(); void requestExplanation(); }
+  state.reportPresentation = 'default';
+  if ($('#objectDialog').open) renderObjectDetails();
+  if (!$('#reportView').classList.contains('hidden')) renderReport();
 }
 $$('[data-language]').forEach(button => button.addEventListener('click', () => changeLanguage(button.dataset.language)));
 
@@ -541,6 +631,12 @@ $('#filterRow').addEventListener('click', event => { const chip = event.target.c
 $('#decisionList').addEventListener('click', event => { const button = event.target.closest('[data-remove]'); if (button) { state.decisions = state.decisions.filter(decision => decision.id !== button.dataset.remove); invalidateResult(); render(); setStatus(''); void validateDraft(); } });
 
 $('#cityMap').addEventListener('click', event => {
+  const object = event.target.closest('[data-object-key]');
+  if (object && !state.selectedMeasureId) {
+    event.stopPropagation();
+    openObjectDetails(object.dataset.objectKey);
+    return;
+  }
   const district = event.target.closest('[data-district]');
   if (!district) return;
   event.stopPropagation();
@@ -550,6 +646,13 @@ $('#cityMap').addEventListener('click', event => {
 });
 $('#cityMap').addEventListener('keydown', event => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
+  const object = event.target.closest('[data-object-key]');
+  if (object && !state.selectedMeasureId) {
+    event.preventDefault();
+    event.stopPropagation();
+    openObjectDetails(object.dataset.objectKey);
+    return;
+  }
   const district = event.target.closest('[data-district]');
   if (!district) return;
   event.preventDefault();
@@ -600,7 +703,7 @@ document.addEventListener('click', event => {
   if (state.indicatorsOpen && !event.target.closest('#pulse, [data-district], .language-switcher')) { state.indicatorsOpen = false; renderIndicators(); }
 });
 document.addEventListener('keydown', event => {
-  if (event.key !== 'Escape' || !state.ready) return;
+  if (event.key !== 'Escape' || !state.ready || $('#objectDialog').open) return;
   state.indicatorsOpen = false;
   state.focusedDistrictId = null;
   state.selectedMeasureId = null;
@@ -609,8 +712,19 @@ document.addEventListener('keydown', event => {
   render();
   setStatus('');
 });
+$('#closeObjectButton').addEventListener('click', () => $('#objectDialog').close());
+$('#objectDialog').addEventListener('click', event => {
+  if (event.target !== event.currentTarget) return;
+  const rect = event.currentTarget.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.currentTarget.close();
+});
+$('#objectDialog').addEventListener('close', () => {
+  const key = state.inspectedObject?.key;
+  state.inspectedObject = null;
+  $$('.map-object').find(element => element.dataset.objectKey === key)?.focus({ preventScroll: true });
+});
 $('#calculateButton').addEventListener('click', openReport);
-$('#reportTabs').addEventListener('click', event => { const tab = event.target.closest('[data-report-tab]'); if (!tab) return; state.reportTab = tab.dataset.reportTab; state.narrativePage = 0; $$('.report-tab').forEach(item => item.classList.toggle('active', item === tab)); renderReportContent(); });
+$('#reportTabs').addEventListener('click', event => { const tab = event.target.closest('[data-report-tab]'); if (!tab) return; state.reportTab = tab.dataset.reportTab; state.reportPresentation = 'default'; state.narrativePage = 0; $$('.report-tab').forEach(item => item.classList.toggle('active', item === tab)); renderReportContent(); });
 $('#reportMode').addEventListener('click', event => {
   const button = event.target.closest('[data-mode]');
   if (!button) return;
@@ -619,7 +733,8 @@ $('#reportMode').addEventListener('click', event => {
   queuePagination();
 });
 $('#reportContent').addEventListener('click', event => {
-  if (event.target.closest('[data-retry-ai]')) { void requestExplanation(true); return; }
+  if (event.target.closest('[data-request-ai]')) { void requestExplanation(); return; }
+  if (event.target.closest('[data-default-report]')) { state.reportPresentation = 'default'; state.narrativePage = 0; renderReportContent(); return; }
   const button = event.target.closest('[data-page-step]');
   if (!button) return;
   state.narrativePage = Math.max(0, Math.min(narrativePages.length - 1, state.narrativePage + Number(button.dataset.pageStep)));

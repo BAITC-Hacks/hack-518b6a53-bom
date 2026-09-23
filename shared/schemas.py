@@ -41,6 +41,14 @@ class ScenarioRequest(StrictSchema):
 
 class ExplainRequest(ScenarioRequest):
     language: ExplanationLanguage = "ru"
+    district_id: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_null_scope(cls, value: object) -> object:
+        if isinstance(value, dict) and "district_id" in value and value["district_id"] is None:
+            raise ValueError("district_id must be omitted for a city explanation")
+        return value
 
 
 class ErrorSchema(StrictSchema):
@@ -212,6 +220,7 @@ class ExplainResponse(StrictSchema):
     model_version: str
     scenario_key: str
     language: ExplanationLanguage
+    district_id: str | None
     mode: Literal["llm", "fallback"]
     llm_model: str | None
     explanation: ExplanationSchema
