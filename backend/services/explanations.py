@@ -9,7 +9,7 @@ from pydantic import ValidationError as SchemaValidationError
 
 from backend.domain.models import Dataset, ScenarioReport, Selection, Snapshot
 from backend.services.scenarios import ScenarioService
-from shared.schemas import ExplainResponse, ExplanationSchema
+from shared.schemas import ExplainResponse, ExplanationLanguage, ExplanationSchema
 
 
 class ExplanationFailureReason(str, Enum):
@@ -26,6 +26,7 @@ class ExplanationFacts:
 
     report: ScenarioReport
     context: dict[str, Any]
+    language: ExplanationLanguage = "ru"
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,16 +174,20 @@ class ExplanationService:
     scenarios: ScenarioService
     adapter: ExplanationAdapter
 
-    async def explain(self, model_version: str, selections: tuple[Selection, ...]) -> ExplainResponse:
+    async def explain(
+        self, model_version: str, selections: tuple[Selection, ...],
+        language: ExplanationLanguage = "ru",
+    ) -> ExplainResponse:
         """Validate, recalculate, form facts, then ask the explanation adapter."""
         report = self.scenarios.evaluate(model_version, selections)
-        facts = ExplanationFacts(report, build_ai_context(report, self.scenarios.dataset))
-        result = await self.adapter.explain(ExplanationFacts(report, deepcopy(facts.context)))
+        facts = ExplanationFacts(report, build_ai_context(report, self.scenarios.dataset), language)
+        result = await self.adapter.explain(ExplanationFacts(report, deepcopy(facts.context), language))
         if isinstance(result, ExplanationSuccess):
             explanation = _checked_success(result)
             if explanation is not None:
                 return ExplainResponse(
                     model_version=report.model_version, scenario_key=report.scenario_key,
+                    language=language,
                     mode="llm", llm_model=result.llm_model, explanation=explanation, warning=None,
                 )
             reason = ExplanationFailureReason.AI_INVALID_RESPONSE

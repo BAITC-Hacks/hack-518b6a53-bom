@@ -2,7 +2,13 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, SerializerFunctionWrapHandler, model_serializer, model_validator
+from pydantic import (
+    BaseModel, ConfigDict, SerializerFunctionWrapHandler, field_validator,
+    model_serializer, model_validator,
+)
+
+
+ExplanationLanguage = Literal["ru", "kk", "en"]
 
 
 class StrictSchema(BaseModel):
@@ -31,6 +37,10 @@ class SelectionSchema(StrictSchema):
 class ScenarioRequest(StrictSchema):
     model_version: str
     selections: list[SelectionSchema]
+
+
+class ExplainRequest(ScenarioRequest):
+    language: ExplanationLanguage = "ru"
 
 
 class ErrorSchema(StrictSchema):
@@ -182,6 +192,16 @@ class ExplanationSchema(StrictSchema):
     risks: list[str]
     recommendations: list[str]
 
+    @field_validator("summary")
+    @classmethod
+    def clean_summary(cls, value: str) -> str:
+        return value.replace("\u00b7", " ").strip()
+
+    @field_validator("strengths", "risks", "recommendations")
+    @classmethod
+    def clean_items(cls, values: list[str]) -> list[str]:
+        return [value.replace("\u00b7", " ").strip() for value in values]
+
 
 class WarningSchema(StrictSchema):
     code: str
@@ -191,6 +211,7 @@ class WarningSchema(StrictSchema):
 class ExplainResponse(StrictSchema):
     model_version: str
     scenario_key: str
+    language: ExplanationLanguage
     mode: Literal["llm", "fallback"]
     llm_model: str | None
     explanation: ExplanationSchema

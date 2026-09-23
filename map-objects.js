@@ -2,7 +2,6 @@ import { MAP_DISTRICTS, MAP_LAKES, MAP_RIVER } from './map-geometry.js';
 import { MEASURES } from './model.js';
 
 export const projectMapPoint = ({ x, y }) => ({ x: .9 * x + .38 * y - 88, y: -.28 * x + .64 * y + 242 });
-const measures = new Map(MEASURES.map(measure => [measure.id, measure]));
 const GAP = 4;
 const MAX_PER_DISTRICT = 5;
 
@@ -109,6 +108,8 @@ export function createObjectSlots() {
 const slots = createObjectSlots();
 
 export function layoutMapObjects(decisions, previous = []) {
+  // Catalog data arrives after this module is imported.
+  const measures = new Map(MEASURES.map(measure => [measure.id, measure]));
   const requests = decisions.flatMap(decision => {
     const measure = measures.get(decision.id);
     if (!measure) return [];

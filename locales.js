@@ -1,5 +1,12 @@
 export const translations = {
   ru: {
+    network: {
+      loading: 'Загружаем город…', retry: 'Повторить', validating: 'Проверяем…', calculating: 'Рассчитываем…',
+      aiLoading: 'Готовим отчёт…', fallback: 'AI недоступен. Показан расчётный отчёт.',
+      unavailable: 'Сервер недоступен. Попробуйте ещё раз.', requestFailed: 'Не удалось получить ответ. Попробуйте ещё раз.',
+      timeout: 'Сервер не успел ответить. Попробуйте ещё раз.',
+      versionChanged: 'Модель обновилась. Перезагрузите страницу.', conflict: 'Выбранные мероприятия несовместимы.'
+    },
     ui: {
       appTitle: 'Астана — сценарий развития',
       measures: 'Мероприятия',
@@ -91,14 +98,14 @@ export const translations = {
     errors: {
       unknown: 'Мероприятие не найдено.',
       duplicate: 'Это мероприятие уже выбрано.',
-      limit: 'Можно принять ровно 5 решений.',
+      limit: 'Можно принять ровно {count} решений.',
       districtRequired: 'Перетащите меру на район.',
       cityOnly: 'Эта мера применяется ко всему городу.',
-      budget: 'Бюджет 100 ед. будет превышен.',
-      groupLimit: 'Не более двух мер из одного направления.',
-      incompatible: 'M1 и M3 несовместимы.',
+      budget: 'Бюджет {budget} ед. будет превышен.',
+      groupLimit: 'Не более {count} мер из одного направления.',
+      incompatible: '{first} и {second} несовместимы.',
       districtConflict: '{first} и {second} нельзя применить в одном районе.',
-      count: 'Выберите ровно 5 мероприятий.'
+      count: 'Выберите ровно {count} мероприятий.'
     },
     report: {
       average: 'Среднее',
@@ -108,6 +115,7 @@ export const translations = {
       forecast: 'Прогноз',
       change: 'Изменение',
       changesTitle: 'Что меняется',
+      summary: 'Общий результат', recommendations: 'Рекомендации', pages: 'Страницы отчёта', previous: 'Предыдущая страница', next: 'Следующая страница',
       strength: 'Сильная сторона',
       risk: 'Зона внимания',
       consequences: 'Последствия',
@@ -120,11 +128,18 @@ export const translations = {
       districtStrength: '{name}: {value} пункта — наибольшее улучшение.',
       noDistrictChange: 'Выбранные меры не изменили показатели района.',
       districtRisk: '{name}: {value} из 100 — самое низкое значение.',
-      belowCritical: 'Ниже критической границы 40.',
+      belowCritical: 'Ниже критической границы {value}.',
       districtConsequences: 'Балл района изменился на {value}. Доля района в городском среднем — {population}%.'
     }
   },
   kk: {
+    network: {
+      loading: 'Қала деректері жүктелуде…', retry: 'Қайталау', validating: 'Тексерілуде…', calculating: 'Есептелуде…',
+      aiLoading: 'Есеп дайындалуда…', fallback: 'AI қолжетімсіз. Есептеу нәтижесі көрсетілді.',
+      unavailable: 'Сервер қолжетімсіз. Қайта көріңіз.', requestFailed: 'Жауап алынбады. Қайта көріңіз.',
+      timeout: 'Сервер уақытында жауап бермеді. Қайта көріңіз.',
+      versionChanged: 'Модель жаңарды. Бетті қайта жүктеңіз.', conflict: 'Таңдалған іс-шаралар үйлеспейді.'
+    },
     ui: {
       appTitle: 'Астана — даму сценарийі',
       measures: 'Іс-шаралар',
@@ -216,14 +231,14 @@ export const translations = {
     errors: {
       unknown: 'Іс-шара табылмады.',
       duplicate: 'Бұл іс-шара таңдалып қойған.',
-      limit: 'Дәл 5 шешім қабылдауға болады.',
+      limit: 'Дәл {count} шешім қабылдауға болады.',
       districtRequired: 'Шараны ауданға сүйреп апарыңыз.',
       cityOnly: 'Бұл шара бүкіл қалаға қолданылады.',
-      budget: '100 бірлік бюджет шегінен асады.',
-      groupLimit: 'Бір бағыттан екі шарадан артық таңдауға болмайды.',
-      incompatible: 'M1 және M3 үйлеспейді.',
+      budget: '{budget} бірлік бюджет шегінен асады.',
+      groupLimit: 'Бір бағыттан {count} шарадан артық таңдауға болмайды.',
+      incompatible: '{first} және {second} үйлеспейді.',
       districtConflict: '{first} және {second} шараларын бір ауданда қолдануға болмайды.',
-      count: 'Дәл 5 іс-шара таңдаңыз.'
+      count: 'Дәл {count} іс-шара таңдаңыз.'
     },
     report: {
       average: 'Орташа',
@@ -233,6 +248,7 @@ export const translations = {
       forecast: 'Болжам',
       change: 'Өзгеріс',
       changesTitle: 'Не өзгереді',
+      summary: 'Жалпы нәтиже', recommendations: 'Ұсыныстар', pages: 'Есеп беттері', previous: 'Алдыңғы бет', next: 'Келесі бет',
       strength: 'Күшті жағы',
       risk: 'Назар аудару қажет',
       consequences: 'Салдары',
@@ -245,11 +261,18 @@ export const translations = {
       districtStrength: '{name}: {value} тармақ — ең үлкен жақсару.',
       noDistrictChange: 'Таңдалған шаралар аудан көрсеткіштерін өзгертпеді.',
       districtRisk: '{name}: 100-ден {value} — ең төменгі мән.',
-      belowCritical: '40 балдық шектен төмен.',
+      belowCritical: '{value} балдық шектен төмен.',
       districtConsequences: 'Ауданның балы {value} шамасына өзгерді. Қалалық орташа көрсеткіштегі ауданның үлесі — {population}%.'
     }
   },
   en: {
+    network: {
+      loading: 'Loading the city…', retry: 'Try again', validating: 'Checking…', calculating: 'Calculating…',
+      aiLoading: 'Preparing the report…', fallback: 'AI unavailable. Showing a calculation-based report.',
+      unavailable: 'Server unavailable. Please try again.', requestFailed: 'Could not get a response. Please try again.',
+      timeout: 'The server took too long to respond. Please try again.',
+      versionChanged: 'The model has changed. Reload the page.', conflict: 'The selected measures are incompatible.'
+    },
     ui: {
       appTitle: 'Astana — development scenario',
       measures: 'Measures',
@@ -341,14 +364,14 @@ export const translations = {
     errors: {
       unknown: 'Measure not found.',
       duplicate: 'This measure is already selected.',
-      limit: 'You can make exactly 5 decisions.',
+      limit: 'You can make exactly {count} decisions.',
       districtRequired: 'Drag the measure onto a district.',
       cityOnly: 'This measure applies to the whole city.',
-      budget: 'This would exceed the budget of 100 units.',
-      groupLimit: 'Choose no more than two measures per category.',
-      incompatible: 'M1 and M3 cannot be combined.',
+      budget: 'This would exceed the budget of {budget} units.',
+      groupLimit: 'Choose no more than {count} measures per category.',
+      incompatible: '{first} and {second} cannot be combined.',
       districtConflict: '{first} and {second} cannot be applied to the same district.',
-      count: 'Select exactly 5 measures.'
+      count: 'Select exactly {count} measures.'
     },
     report: {
       average: 'Average',
@@ -358,6 +381,7 @@ export const translations = {
       forecast: 'Forecast',
       change: 'Change',
       changesTitle: 'What changes',
+      summary: 'Overall result', recommendations: 'Recommendations', pages: 'Report pages', previous: 'Previous page', next: 'Next page',
       strength: 'Strength',
       risk: 'Needs attention',
       consequences: 'Consequences',
@@ -370,7 +394,7 @@ export const translations = {
       districtStrength: '{name}: {value} points — the largest improvement.',
       noDistrictChange: 'The selected measures did not change this district’s indicators.',
       districtRisk: '{name}: {value} out of 100 — the lowest value.',
-      belowCritical: 'Below the critical threshold of 40.',
+      belowCritical: 'Below the critical threshold of {value}.',
       districtConsequences: 'The district score changed by {value}. Its weight in the city average is {population}%.'
     }
   }

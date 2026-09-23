@@ -135,13 +135,13 @@ html,body{height:100%;overflow:hidden}.app-shell{height:100svh;min-height:0}.wor
   .report-tabs .report-tab { min-height: 44px; padding: 12px 20px; font-size: var(--desktop-text); color: #37617b; }
   .report-tabs .report-tab.active { color: #fff; }
   .report-content { grid-template-columns: minmax(0, 1.3fr) minmax(360px, .9fr); gap: 20px; }
-  .report-card { padding: 24px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #bad4e5 transparent; }
+  .report-card { padding: 24px; overflow: hidden; }
   .report-card h2 { margin-bottom: 18px; font-size: var(--desktop-title); }
   .report-stat-grid { gap: 12px; margin-bottom: 20px; }
   .report-stat { padding: 16px; }
   .report-stat span { font-size: var(--desktop-meta); line-height: 1.5; color: var(--desktop-muted); }
   .report-stat strong { font-size: 30px; margin-top: 8px; }
-  .report-metrics { flex: 1 0 400px; min-height: 400px; grid-template-rows: repeat(10, minmax(40px, 1fr)); }
+  .report-metrics { flex: 1; min-height: 0; grid-template-rows: repeat(10, minmax(0, 1fr)); }
   .report-line { gap: 14px; font-size: var(--desktop-meta); }
   .report-line-name { width: clamp(210px, 14vw, 280px); color: #37617b; }
   .report-line-track { height: 8px; }
@@ -249,8 +249,8 @@ html,body{height:100%;overflow:hidden}.app-shell{height:100svh;min-height:0}.wor
   .remove-button { grid-column: 3; }
 }
 @media (min-width: 761px) and (max-height: 520px) {
-  .app-shell { overflow-y: auto; }
-  .workspace { height: max(620px, 100svh); }
+  .app-shell { overflow: hidden; }
+  .workspace { height: 100%; }
 }
 
 /* Category filters use the same 32px icon size at every breakpoint. */
@@ -361,4 +361,74 @@ html,body{height:100%;overflow:hidden}.app-shell{height:100svh;min-height:0}.wor
 @media (max-width: 760px) {
   .measure-scope { padding: 3px 6px; gap: 4px; font-size: 10px; }
   .measure-scope img { width: 14px; height: 14px; }
+}
+
+/* Server state stays within the widget. Reports paginate at their actual height. */
+.startup-status { position: absolute; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: #eaf5fbf5; color: #37617b; }
+.startup-status p { margin: 0; max-width: 320px; padding: 0 20px; text-align: center; font-size: 15px; line-height: 1.5; }
+.retry-button { border: 1px solid #b2d4eb; border-radius: 8px; padding: 7px 12px; color: #24618b; background: #eaf5fb; font-size: 12px; }
+.plan-bottom > .retry-button { margin-bottom: 8px; }
+.analysis-status { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 0 0 12px; font-size: 11px; line-height: 1.4; color: #527086; }
+.analysis-status .retry-button { flex: none; font-size: 10px; padding: 6px 8px; }
+.narrative-page { min-height: 0; flex: 1; overflow: hidden; overflow-wrap: anywhere; }
+.narrative-page .report-narrative { padding: 10px 0; }
+.narrative-page .report-narrative:first-child { padding-top: 0; }
+.narrative-page p { font-size: clamp(12px, .9vw, 16px); line-height: 1.55; margin: 5px 0 0; }
+.report-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; padding-top: 8px; flex: none; font-size: 12px; color: #527086; }
+.report-pagination.hidden { display: flex !important; visibility: hidden; }
+.report-pagination button { border: 0; border-radius: 8px; background: #eaf5fb; color: #24618b; width: 36px; height: 30px; }
+.report-pagination button:disabled { opacity: .35; }
+.report-line-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.report-actions { gap: 5px; margin-top: 8px; }
+.report-actions > span { padding: 6px 8px; font-size: 10px; }
+.report-actions small { font-size: 9px; }
+@media (min-width: 761px) and (max-height: 800px) {
+  .report-view { padding: 16px; gap: 10px; }
+  .report-hero { padding: 12px 20px; }
+  .report-hero h1 { font-size: 25px; }
+  .report-score > strong { font-size: 38px; }
+  .report-card { padding: 16px; }
+  .report-card h2 { font-size: 18px; margin-bottom: 10px; }
+  .report-stat-grid { margin-bottom: 10px; gap: 8px; }
+  .report-stat { padding: 8px 10px; }
+  .report-stat strong { font-size: 23px; margin-top: 3px; }
+  .report-stat span, .report-line, .report-line b { font-size: 12px; }
+  .report-tabs .report-tab { min-height: 34px; padding: 8px 12px; }
+  .report-actions > span { padding: 5px 7px; }
+  .narrative-page p { font-size: 13px; }
+}
+@media (max-height: 560px) {
+  .report-head .language-switcher { width: 170px; padding: 3px; }
+  .report-head .language-switcher button { min-height: 30px; padding: 6px; font-size: 12px; }
+  .report-head .back-button, .report-head .text-button { min-height: 30px; padding: 6px 8px; font-size: 11px; }
+  .report-hero { padding: 8px 14px; }
+  .report-hero h1 { font-size: 18px; margin: 4px 0 0; }
+  .report-score > strong { font-size: 26px; }
+  .report-score > small { font-size: 9px; padding: 4px 6px; }
+  .report-tabs .report-tab { min-height: 28px; font-size: 11px; padding: 6px 8px; }
+  .report-view { padding: 10px; gap: 7px; }
+  .report-card { padding: 10px; }
+  .report-card h2 { font-size: 14px; margin-bottom: 6px; }
+  .report-stat { padding: 4px 8px; }
+  .report-stat strong { font-size: 17px; margin-top: 0; }
+  .report-stat span, .report-line, .report-line b { font-size: 10px; }
+  .report-stat-grid { margin-bottom: 6px; }
+  .narrative-page p { font-size: 11px; }
+  .narrative-page .report-narrative strong { font-size: 11px; }
+  .analysis-status { font-size: 10px; padding-bottom: 6px; }
+  .report-actions > span { font-size: 9px; padding: 3px 5px; }
+  .report-actions small { font-size: 8px; }
+  .report-pagination { padding-top: 4px; }
+  .report-pagination button { height: 24px; }
+}
+@media (max-width: 480px) {
+  .report-head .language-switcher { width: 195px; padding: 3px; }
+  .report-head .language-switcher button { min-height: 34px; padding: 7px; font-size: 12px; }
+  .report-stat { padding: 6px; }
+  .report-stat strong { margin-top: 2px; }
+  .report-card h2 { margin-bottom: 7px; }
+  .report-line-name { width: min(46vw, 190px); }
+  .narrative-page p { font-size: 12px; }
+  .report-actions > span { padding: 4px 6px; font-size: 9px; }
+  .report-actions small { font-size: 8px; }
 }

@@ -1,5 +1,12 @@
 services:
+  ui:
+    volumes:
+      - .:/app:ro
+    command: ["node", "--watch", "server.js"]
+
   api:
+    ports:
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./backend:/app/backend:ro
       - ./shared:/app/shared:ro

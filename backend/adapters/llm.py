@@ -15,6 +15,13 @@ from backend.settings import Settings
 from shared.schemas import AIHealthResponse, ExplanationSchema
 
 
+LANGUAGE_INSTRUCTIONS = {
+    "ru": "Write every explanation field in Russian. Use Russian district names.",
+    "kk": "Write every explanation field in Kazakh. Use Kazakh district names.",
+    "en": "Write every explanation field in English. Transliterate district names into English.",
+}
+
+
 class OpenAIExplanationAdapter:
     def __init__(self, settings: Settings, client: AsyncOpenAI | None) -> None:
         self.settings = settings
@@ -51,12 +58,13 @@ class OpenAIExplanationAdapter:
 
         try:
             payload = json.dumps(facts.context, ensure_ascii=False)
+            instructions = self._instructions + "\n\n" + LANGUAGE_INSTRUCTIONS[facts.language]
             try:
                 response = await asyncio.wait_for(
                     self.client.responses.parse(
                         model=self.settings.openai_model,
                         input=[
-                            {"role": "system", "content": self._instructions},
+                            {"role": "system", "content": instructions},
                             {"role": "user", "content": payload},
                         ],
                         text_format=ExplanationSchema,

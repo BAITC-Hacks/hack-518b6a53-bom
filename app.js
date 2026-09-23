@@ -1,4 +1,5 @@
-import { INDICATORS, DISTRICTS, MEASURES, BUDGET, HORIZON, BASELINE, calculate, getAdditionIssue, getScenarioIssue } from './model.js';
+import { INDICATORS, DISTRICTS, MEASURES, BUDGET, HORIZON, BASELINE, RULES, REQUIRED_DECISIONS, configureCatalog, fromServerSnapshot, calculate, getAdditionIssue, getScenarioIssue } from './model.js';
+import { getCatalog, validateScenario, evaluateScenario, explainScenario } from './api.js';
 import { MAP_DISTRICTS, MAP_RIVER, MAP_LAKES } from './map-geometry.js';
 import { layoutMapObjects, mapLabelPosition, projectMapPoint } from './map-objects.js';
 import { renderMapObject } from './map-object-art.js';
@@ -7,13 +8,17 @@ import { translate as t, formatNumber, groupName, measureName, districtName, ind
 setLanguage(loadLanguage());
 
 const $ = selector => document.querySelector(selector);
-const state = { decisions: [], selectedMeasureId: null, focusedDistrictId: null, filter: 'Все', draggingId: null, hoverTarget: null, indicatorsOpen: false, reportTab: 'city', status: null, statusError: false };
-const measureById = Object.fromEntries(MEASURES.map(measure => [measure.id, measure]));
-const districtById = Object.fromEntries(DISTRICTS.map(district => [district.id, district]));
+const state = { decisions: [], selectedMeasureId: null, focusedDistrictId: null, filter: 'Все', draggingId: null, hoverTarget: null, indicatorsOpen: false, reportTab: 'city', status: null, statusError: false, ready: false, validation: 'idle', canEvaluate: false, evaluating: false, evaluation: null, result: null, explanations: {}, aiStatus: 'idle', aiError: null, narrativePage: 0 };
+let measureById = {};
+let districtById = {};
+let validationRequest = 0, evaluationRequest = 0, explanationRequest = 0;
+let validationController, evaluationController, explanationController;
+let narrativeSections = [], narrativePages = [];
+let paginationFrame;
 let toastTimer;
 let toastMessage = null;
 let previewTarget = null;
-const escapeHTML = value => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+const escapeHTML = value => String(value).replace(/\u00b7/g, '—').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 const text = (key, params) => escapeHTML(t(key, params));
 const project = projectMapPoint;
 let mapObjects = [];
@@ -84,6 +89,53 @@ function renderStatus() {
   element.classList.toggle('error', state.statusError);
   if (toastMessage) $('#toast').textContent = t(toastMessage.key, toastMessage.params);
 }
+function apiIssue(error) {
+  const code = error?.code || error?.errors?.[0]?.code;
+  const keys = {
+    UNKNOWN_MEASURE: 'errors.unknown', UNKNOWN_DISTRICT: 'errors.districtRequired',
+    DISTRICT_REQUIRED: 'errors.districtRequired', DISTRICT_FORBIDDEN: 'errors.cityOnly',
+    DECISION_COUNT: 'errors.count', DUPLICATE_MEASURE: 'errors.duplicate',
+    BUDGET_EXCEEDED: 'errors.budget', DIRECTION_LIMIT: 'errors.groupLimit',
+    INCOMPATIBLE_MEASURES: 'network.conflict', DISTRICT_CONFLICT: 'network.conflict',
+    MODEL_VERSION_MISMATCH: 'network.versionChanged', MODEL_VERSION_CONFLICT: 'network.versionChanged',
+    DATASET_UNAVAILABLE: 'network.unavailable', NETWORK_ERROR: 'network.unavailable',
+    TIMEOUT: 'network.timeout', REQUEST_TIMEOUT: 'network.timeout'
+  };
+  return { key: keys[code] || (error?.status === 409 ? 'network.versionChanged' : 'network.requestFailed'), params: { count: code === 'DIRECTION_LIMIT' ? RULES?.max_per_direction : REQUIRED_DECISIONS, budget: BUDGET } };
+}
+function invalidateResult() {
+  evaluationRequest++;
+  explanationRequest++;
+  evaluationController?.abort();
+  explanationController?.abort();
+  state.evaluating = false;
+  state.evaluation = null;
+  state.result = null;
+  state.explanations = {};
+  state.aiStatus = 'idle';
+  state.aiError = null;
+  state.narrativePage = 0;
+}
+async function validateDraft() {
+  validationController?.abort();
+  validationController = new AbortController();
+  const request = ++validationRequest;
+  state.validation = 'pending';
+  state.canEvaluate = false;
+  renderPlan();
+  try {
+    const result = await validateScenario(state.decisions, { signal: validationController.signal });
+    if (request !== validationRequest) return;
+    state.validation = result.valid_draft ? 'valid' : 'invalid';
+    state.canEvaluate = result.can_evaluate;
+    if (!result.valid_draft) setStatus(apiIssue({ errors: result.errors }), true);
+  } catch (error) {
+    if (request !== validationRequest || error.name === 'AbortError') return;
+    state.validation = 'error';
+    setStatus(apiIssue(error), true);
+  }
+  if (request === validationRequest) renderPlan();
+}
 function current() { return calculate(state.decisions); }
 function districtResult(result, id) { return result.districts.find(district => district.id === id); }
 
@@ -108,16 +160,19 @@ function $$(selector) { return [...document.querySelectorAll(selector)]; }
 function renderPlan() {
   const result = current();
   const count = state.decisions.length;
-  $('#decisionCount').textContent = `${count} / 5`;
+  $('#decisionCount').textContent = `${count} / ${REQUIRED_DECISIONS}`;
+  $('#budgetLimit').textContent = ` / ${format(BUDGET, 0)}`;
   $('#spentValue').textContent = format(result.spent, 0);
   $('#remainingValue').textContent = t('ui.units', { value: format(BUDGET - result.spent, 0) });
-  $('#budgetFill').style.width = `${result.spent}%`;
-  $('#budgetFill').classList.toggle('danger', result.spent > 85);
+  $('#budgetFill').style.width = `${result.spent / BUDGET * 100}%`;
+  $('#budgetFill').classList.toggle('danger', result.spent > BUDGET * .85);
   $('#decisionList').innerHTML = state.decisions.map((decision, index) => {
     const measure = measureById[decision.id];
     return `<div class="decision-item"><span class="decision-number">0${index + 1}</span><div class="decision-copy" title="${escapeHTML(`${measureName(measure.id)} — ${getTargetName(decision)} / ${groupName(measure.group)}`)}"><strong>${escapeHTML(measureName(measure.id))}</strong><span>${measure.id} / ${escapeHTML(getTargetName(decision))} / ${escapeHTML(groupName(measure.group))}</span></div><span class="decision-cost">${format(measure.cost, 0)}</span><button class="remove-button" type="button" data-remove="${decision.id}" aria-label="${text('ui.removeMeasure', { name: measureName(measure.id) })}">×</button></div>`;
-  }).join('') + Array.from({ length: 5 - count }, (_, index) => `<div class="empty-slot" aria-label="${text('ui.emptyDecision', { index: count + index + 1 })}"><span>0${count + index + 1}</span>＋</div>`).join('');
-  $('#calculateButton').disabled = Boolean(getScenarioIssue(state.decisions));
+  }).join('') + Array.from({ length: Math.max(0, REQUIRED_DECISIONS - count) }, (_, index) => `<div class="empty-slot" aria-label="${text('ui.emptyDecision', { index: count + index + 1 })}"><span>0${count + index + 1}</span>＋</div>`).join('');
+  $('#calculateButton').disabled = state.evaluating || !state.canEvaluate || Boolean(getScenarioIssue(state.decisions));
+  $('#calculateButton span').textContent = t(state.evaluating ? 'network.calculating' : state.validation === 'pending' ? 'network.validating' : 'ui.calculate');
+  $('#retryValidation').classList.toggle('hidden', state.validation !== 'error');
 }
 
 function indicatorValues(result) {
@@ -137,7 +192,7 @@ function renderIndicators(result = current()) {
   panel.innerHTML = INDICATORS.map((indicator, index) => {
     const group = indicator.group !== previousGroup ? `<div class="indicator-group">${escapeHTML(groupName(indicator.group).toLocaleUpperCase(getLanguage()))}</div>` : '';
     previousGroup = indicator.group;
-    return `${group}<div class="indicator-row ${values[index] < 40 ? 'critical' : ''}" tabindex="0" data-description="${escapeHTML(`${indicatorName(indicator.code)}. ${indicatorDescription(indicator.code)}`)}" aria-label="${escapeHTML(`${indicator.code}, ${indicatorName(indicator.code)}: ${format(values[index], 1)}. ${indicatorDescription(indicator.code)}`)}"><code>${indicator.code}</code><span class="indicator-track"><i style="width:${values[index]}%"></i></span><b>${format(values[index], 0)}</b></div>`;
+    return `${group}<div class="indicator-row ${values[index] < RULES.critical_threshold ? 'critical' : ''}" tabindex="0" data-description="${escapeHTML(`${indicatorName(indicator.code)}. ${indicatorDescription(indicator.code)}`)}" aria-label="${escapeHTML(`${indicator.code}, ${indicatorName(indicator.code)}: ${format(values[index], 1)}. ${indicatorDescription(indicator.code)}`)}"><code>${indicator.code}</code><span class="indicator-track"><i style="width:${values[index]}%"></i></span><b>${format(values[index], 0)}</b></div>`;
   }).join('');
 }
 
@@ -172,7 +227,7 @@ function renderMap() {
   renderIndicators(result);
 }
 
-function render() { renderCatalog(); renderPlan(); renderMap(); }
+function render() { if (!state.ready) return; renderCatalog(); renderPlan(); renderMap(); }
 function selectMeasure(id) {
   if (state.decisions.some(decision => decision.id === id)) return;
   state.selectedMeasureId = state.selectedMeasureId === id ? null : id;
@@ -185,10 +240,12 @@ function addMeasure(id, districtId = null) {
   const error = getAdditionIssue(state.decisions, id, districtId);
   if (error) { setStatus(error, true); return false; }
   state.decisions.push({ id, ...(districtId ? { districtId } : {}) });
+  invalidateResult();
   state.selectedMeasureId = null;
   state.hoverTarget = null;
   render();
   setStatus('');
+  void validateDraft();
   return true;
 }
 function focusDistrict(id) {
@@ -265,7 +322,8 @@ function reportActions(decisions) {
   return `<div class="report-actions">${decisions.map(decision => `<span title="${escapeHTML(measureName(decision.id))}">${decision.id}<small>${escapeHTML(getTargetName(decision))}</small></span>`).join('') || `<span>${text('report.noMeasures')}</span>`}</div>`;
 }
 function renderReportContent() {
-  const result = current();
+  const result = state.result;
+  if (!result) return;
   const selected = state.reportTab;
   const city = selected === 'city';
   const district = city ? null : districtResult(result, selected);
@@ -281,15 +339,76 @@ function renderReportContent() {
     const strongest = [...changed].sort((a, b) => b.delta - a.delta)[0];
     const lowest = [...changed].sort((a, b) => a.value - b.value)[0];
     strengths = strongest.delta > 0 ? t('report.districtStrength', { name: indicatorName(strongest.code), value: signed(strongest.delta, 1) }) : t('report.noDistrictChange');
-    risks = `${t('report.districtRisk', { name: indicatorName(lowest.code), value: format(lowest.value, 1) })}${lowest.value < 40 ? ` ${t('report.belowCritical')}` : ''}`;
+    risks = `${t('report.districtRisk', { name: indicatorName(lowest.code), value: format(lowest.value, 1) })}${lowest.value < RULES.critical_threshold ? ` ${t('report.belowCritical', { value: RULES.critical_threshold })}` : ''}`;
     consequence = t('report.districtConsequences', { value: signed(district.score - district.baselineScore), population: format(district.population * 100, 0) });
     applied = state.decisions.filter(decision => !decision.districtId || decision.districtId === selected);
   }
+  const explanation = city && state.explanations[getLanguage()];
+  if (explanation) {
+    const content = explanation.explanation;
+    narrativeSections = [{ title: t('report.summary'), body: content.summary },
+      ...content.strengths.map(body => ({ title: t('report.strength'), body })),
+      ...content.risks.map(body => ({ title: t('report.risk'), body })),
+      ...content.recommendations.map(body => ({ title: t('report.recommendations'), body }))];
+  } else if (city) {
+    narrativeSections = [];
+  } else {
+    narrativeSections = [{ title: t('report.strength'), body: strengths }, { title: t('report.risk'), body: risks }, { title: t('report.consequences'), body: consequence }];
+  }
+  const aiMessage = !city ? '' : state.aiStatus === 'loading' ? 'network.aiLoading' : state.aiStatus === 'error' ? (state.aiError?.key || 'network.requestFailed') : explanation?.mode === 'fallback' ? 'network.fallback' : '';
+  const retryAI = city && (state.aiStatus === 'error' || explanation?.mode === 'fallback');
   const stats = city ? [[t('report.average'), format(result.average)], [t('report.minimum'), format(result.weakest)], [t('report.critical'), format(result.critical, 0)]] : [[t('report.current'), format(district.baselineScore)], [t('report.forecast'), format(district.score)], [t('report.change'), signed(district.score - district.baselineScore)]];
-  $('#reportContent').innerHTML = `<section class="report-card" data-pane="metrics"><h2>${escapeHTML(city ? t('ui.wholeCity') : districtName(district.id))}</h2><div class="report-stat-grid">${stats.map(([name, value]) => `<div class="report-stat"><span>${escapeHTML(name)}</span><strong>${value}</strong></div>`).join('')}</div><div class="report-metrics">${reportMetricRows(result, city ? null : selected)}</div></section><section class="report-card" data-pane="analysis"><h2>${text('report.changesTitle')}</h2><div class="report-narratives"><div class="report-narrative"><strong>${text('report.strength')}</strong><p>${escapeHTML(strengths)}</p></div><div class="report-narrative"><strong>${text('report.risk')}</strong><p>${escapeHTML(risks)}</p></div><div class="report-narrative"><strong>${text('report.consequences')}</strong><p>${escapeHTML(consequence)}</p></div></div>${reportActions(applied)}</section>`;
+  $('#reportContent').innerHTML = `<section class="report-card" data-pane="metrics"><h2>${escapeHTML(city ? t('ui.wholeCity') : districtName(district.id))}</h2><div class="report-stat-grid">${stats.map(([name, value]) => `<div class="report-stat"><span>${escapeHTML(name)}</span><strong>${value}</strong></div>`).join('')}</div><div class="report-metrics">${reportMetricRows(result, city ? null : selected)}</div></section><section class="report-card" data-pane="analysis"><h2>${text('report.changesTitle')}</h2><div class="analysis-status ${aiMessage ? '' : 'hidden'}" role="status"><span>${aiMessage ? text(aiMessage) : ''}</span>${retryAI ? `<button type="button" class="retry-button" data-retry-ai>${text('network.retry')}</button>` : ''}</div><div class="narrative-page" id="narrativePage" aria-live="polite"></div><nav class="report-pagination hidden" id="reportPagination" aria-label="${text('report.pages')}"><button type="button" data-page-step="-1" aria-label="${text('report.previous')}">←</button><span id="reportPageNumber"></span><button type="button" data-page-step="1" aria-label="${text('report.next')}">→</button></nav>${reportActions(applied)}</section>`;
+  narrativeObserver.disconnect();
+  narrativeObserver.observe($('#narrativePage'));
+  queuePagination();
 }
+function queuePagination() {
+  cancelAnimationFrame(paginationFrame);
+  paginationFrame = requestAnimationFrame(paginateNarrative);
+}
+function paginateNarrative() {
+  const host = $('#narrativePage');
+  if (!host || host.clientHeight < 30 || !host.clientWidth) return;
+  const pages = [];
+  let page = '';
+  const fragment = (title, words) => `<div class="report-narrative"><strong>${escapeHTML(title)}</strong><p>${escapeHTML(words.join(' '))}</p></div>`;
+  for (const section of narrativeSections) {
+    const words = section.body.trim().split(/\s+/u).filter(Boolean);
+    let offset = 0;
+    while (offset < words.length) {
+      let low = 0, high = words.length - offset;
+      while (low < high) {
+        const count = Math.ceil((low + high) / 2);
+        host.innerHTML = page + fragment(section.title, words.slice(offset, offset + count));
+        if (host.scrollHeight <= host.clientHeight) low = count;
+        else high = count - 1;
+      }
+      if (!low && page) { pages.push(page); page = ''; continue; }
+      const count = Math.max(1, low);
+      page += fragment(section.title, words.slice(offset, offset + count));
+      offset += count;
+      if (offset < words.length) { pages.push(page); page = ''; }
+    }
+  }
+  if (page) pages.push(page);
+  narrativePages = pages;
+  state.narrativePage = Math.min(state.narrativePage, Math.max(0, pages.length - 1));
+  renderNarrativePage();
+}
+function renderNarrativePage() {
+  const host = $('#narrativePage');
+  if (!host) return;
+  host.innerHTML = narrativePages[state.narrativePage] || '';
+  $('#reportPagination').classList.toggle('hidden', narrativePages.length < 2);
+  $('#reportPageNumber').textContent = `${state.narrativePage + 1} / ${narrativePages.length}`;
+  $('[data-page-step="-1"]').disabled = state.narrativePage === 0;
+  $('[data-page-step="1"]').disabled = state.narrativePage >= narrativePages.length - 1;
+}
+const narrativeObserver = new ResizeObserver(queuePagination);
 function renderReport() {
-  const result = current();
+  const result = state.result;
+  if (!result) return;
   $('#reportScore').textContent = format(result.score);
   $('#reportBaseline').textContent = format(BASELINE.score);
   $('#reportDelta').textContent = t('ui.baselineComparison', { value: signed(result.score - BASELINE.score) });
@@ -297,14 +416,65 @@ function renderReport() {
   $('#reportTabs').innerHTML = [{ id: 'city', name: t('ui.wholeCity') }, ...DISTRICTS.map(d => ({ id: d.id, name: districtName(d.id) }))].map(tab => `<button class="report-tab ${state.reportTab === tab.id ? 'active' : ''}" type="button" data-report-tab="${tab.id}">${escapeHTML(tab.name)}</button>`).join('');
   renderReportContent();
 }
-function openReport() {
+async function openReport() {
   const error = getScenarioIssue(state.decisions);
   if (error) { setStatus(error, true); return; }
+  if (state.evaluating || !state.canEvaluate) return;
+  const request = ++evaluationRequest;
+  evaluationController?.abort();
+  evaluationController = new AbortController();
+  state.evaluating = true;
+  setStatus('');
+  renderPlan();
+  try {
+    const result = state.evaluation || await evaluateScenario(state.decisions, { signal: evaluationController.signal });
+    if (request !== evaluationRequest) return;
+    state.evaluation = result;
+    state.result = fromServerSnapshot(result.after, result.budget.spent);
+  } catch (error) {
+    if (request !== evaluationRequest || error.name === 'AbortError') return;
+    setStatus(apiIssue(error), true);
+    state.evaluating = false;
+    renderPlan();
+    return;
+  }
+  state.evaluating = false;
+  renderPlan();
   state.reportTab = 'city';
-  renderReport();
+  state.narrativePage = 0;
   $('#planningView').classList.add('hidden');
   $('#reportView').classList.remove('hidden');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  renderReport();
+  void requestExplanation();
+}
+async function requestExplanation(force = false) {
+  if (!state.evaluation) return;
+  const language = getLanguage();
+  explanationController?.abort();
+  const request = ++explanationRequest;
+  if (state.explanations[language] && !force) {
+    state.aiStatus = 'ready';
+    renderReportContent();
+    return;
+  }
+  delete state.explanations[language];
+  explanationController = new AbortController();
+  const scenarioKey = state.evaluation.scenario_key;
+  state.aiStatus = 'loading';
+  state.aiError = null;
+  renderReportContent();
+  try {
+    const result = await explainScenario(state.decisions, language, { signal: explanationController.signal });
+    if (request !== explanationRequest || scenarioKey !== state.evaluation?.scenario_key || language !== getLanguage()) return;
+    if (result.scenario_key !== scenarioKey || result.language !== language) throw new Error('Mismatched explanation');
+    state.explanations[language] = result;
+    state.aiStatus = 'ready';
+  } catch (error) {
+    if (request !== explanationRequest || error.name === 'AbortError') return;
+    state.aiStatus = 'error';
+    state.aiError = apiIssue(error);
+  }
+  if (request === explanationRequest) renderReportContent();
 }
 
 function localizeShell() {
@@ -326,7 +496,8 @@ function changeLanguage(language) {
   $('#catalogList').scrollTop = catalogScroll;
   renderStatus();
   if (previewTarget) renderPreview(previewTarget.id, previewTarget.districtId);
-  if (!$('#reportView').classList.contains('hidden')) renderReport();
+  state.narrativePage = 0;
+  if (!$('#reportView').classList.contains('hidden')) { renderReport(); void requestExplanation(); }
 }
 $$('[data-language]').forEach(button => button.addEventListener('click', () => changeLanguage(button.dataset.language)));
 
@@ -344,7 +515,7 @@ $('#catalogList').addEventListener('dragstart', event => {
 });
 $('#catalogList').addEventListener('dragend', () => { state.draggingId = null; clearPreview(); $$('.measure-card').forEach(card => card.classList.remove('dragging')); });
 $('#filterRow').addEventListener('click', event => { const chip = event.target.closest('[data-filter]'); if (chip) { state.filter = chip.dataset.filter; renderCatalog(); } });
-$('#decisionList').addEventListener('click', event => { const button = event.target.closest('[data-remove]'); if (button) { state.decisions = state.decisions.filter(decision => decision.id !== button.dataset.remove); render(); setStatus(''); } });
+$('#decisionList').addEventListener('click', event => { const button = event.target.closest('[data-remove]'); if (button) { state.decisions = state.decisions.filter(decision => decision.id !== button.dataset.remove); invalidateResult(); render(); setStatus(''); void validateDraft(); } });
 
 $('#cityMap').addEventListener('click', event => {
   const district = event.target.closest('[data-district]');
@@ -363,6 +534,7 @@ $('#cityMap').addEventListener('keydown', event => {
   else focusDistrict(district.dataset.district);
 });
 $('#mapCard').addEventListener('click', event => {
+  if (!state.ready) return;
   if (event.target.closest('button, [data-district]')) return;
   if (state.selectedMeasureId && measureById[state.selectedMeasureId].scope === 'city') {
     addMeasure(state.selectedMeasureId);
@@ -400,12 +572,12 @@ $('#mapCard').addEventListener('drop', event => {
   clearPreview();
 });
 $('#mapCard').addEventListener('dragleave', event => { if (!$('#mapCard').contains(event.relatedTarget)) clearPreview(); });
-$('#orbButton').addEventListener('click', () => { state.indicatorsOpen = !state.indicatorsOpen; renderIndicators(); });
+$('#orbButton').addEventListener('click', () => { if (!state.ready) return; state.indicatorsOpen = !state.indicatorsOpen; renderIndicators(); });
 document.addEventListener('click', event => {
   if (state.indicatorsOpen && !event.target.closest('#pulse, [data-district], .language-switcher')) { state.indicatorsOpen = false; renderIndicators(); }
 });
 document.addEventListener('keydown', event => {
-  if (event.key !== 'Escape') return;
+  if (event.key !== 'Escape' || !state.ready) return;
   state.indicatorsOpen = false;
   state.focusedDistrictId = null;
   state.selectedMeasureId = null;
@@ -415,16 +587,49 @@ document.addEventListener('keydown', event => {
   setStatus('');
 });
 $('#calculateButton').addEventListener('click', openReport);
-$('#reportTabs').addEventListener('click', event => { const tab = event.target.closest('[data-report-tab]'); if (!tab) return; state.reportTab = tab.dataset.reportTab; $$('.report-tab').forEach(item => item.classList.toggle('active', item === tab)); renderReportContent(); });
+$('#reportTabs').addEventListener('click', event => { const tab = event.target.closest('[data-report-tab]'); if (!tab) return; state.reportTab = tab.dataset.reportTab; state.narrativePage = 0; $$('.report-tab').forEach(item => item.classList.toggle('active', item === tab)); renderReportContent(); });
 $('#reportMode').addEventListener('click', event => {
   const button = event.target.closest('[data-mode]');
   if (!button) return;
   $('#reportContent').dataset.mode = button.dataset.mode;
   $$('#reportMode button').forEach(item => item.classList.toggle('active', item === button));
+  queuePagination();
 });
-$('#backButton').addEventListener('click', () => { $('#reportView').classList.add('hidden'); $('#planningView').classList.remove('hidden'); window.scrollTo({ top: 0, behavior: 'smooth' }); });
-$('#restartButton').addEventListener('click', () => { state.decisions = []; state.focusedDistrictId = null; state.selectedMeasureId = null; state.indicatorsOpen = false; $('#reportView').classList.add('hidden'); $('#planningView').classList.remove('hidden'); render(); setStatus(''); });
+$('#reportContent').addEventListener('click', event => {
+  if (event.target.closest('[data-retry-ai]')) { void requestExplanation(true); return; }
+  const button = event.target.closest('[data-page-step]');
+  if (!button) return;
+  state.narrativePage = Math.max(0, Math.min(narrativePages.length - 1, state.narrativePage + Number(button.dataset.pageStep)));
+  renderNarrativePage();
+});
+$('#backButton').addEventListener('click', () => { $('#reportView').classList.add('hidden'); $('#planningView').classList.remove('hidden'); });
+$('#restartButton').addEventListener('click', () => { state.decisions = []; invalidateResult(); state.focusedDistrictId = null; state.selectedMeasureId = null; state.indicatorsOpen = false; $('#reportView').classList.add('hidden'); $('#planningView').classList.remove('hidden'); render(); setStatus(''); void validateDraft(); });
+$('#retryValidation').addEventListener('click', () => { setStatus(''); void validateDraft(); });
+$('#retryCatalog').addEventListener('click', () => void initialize());
+
+async function initialize() {
+  $('#startupMessage').textContent = t('network.loading');
+  $('#retryCatalog').classList.add('hidden');
+  $('#planningView').inert = true;
+  try {
+    const catalog = await getCatalog();
+    configureCatalog(catalog);
+    measureById = Object.fromEntries(MEASURES.map(measure => [measure.id, measure]));
+    districtById = Object.fromEntries(DISTRICTS.map(district => [district.id, district]));
+    $('.subtle-count').textContent = MEASURES.length;
+    $('#decisionList').style.gridTemplateRows = `repeat(${REQUIRED_DECISIONS}, minmax(0, 1fr))`;
+    state.ready = true;
+    localizeShell();
+    buildMap();
+    render();
+    $('#startupStatus').classList.add('hidden');
+    $('#planningView').inert = false;
+    void validateDraft();
+  } catch (error) {
+    $('#startupMessage').textContent = t(apiIssue(error).key);
+    $('#retryCatalog').classList.remove('hidden');
+  }
+}
 
 localizeShell();
-buildMap();
-render();
+void initialize();

@@ -1,68 +1,98 @@
-export const INDICATORS = [
-  { code: 'T1', name: 'Разгрузка дорог', group: 'Транспорт', weight: .10, description: '100 — нет пробок в час пик; 0 — движение стоит.' },
-  { code: 'T2', name: 'Доступность транспорта', group: 'Транспорт', weight: .10, description: '100 — остановка в 500 м от каждого жителя, интервал до 10 минут.' },
-  { code: 'E1', name: 'Озеленение', group: 'Экология', weight: .09, description: '100 — не менее 20 м² зелени на жителя.' },
-  { code: 'E2', name: 'Качество воздуха', group: 'Экология', weight: .11, description: '100 — зимой AQI не выше 50; 0 — хронический смог.' },
-  { code: 'S1', name: 'Школы и детсады', group: 'Соцсфера', weight: .11, description: '100 — покрыта нормативная потребность, нет второй смены.' },
-  { code: 'S2', name: 'Первичная медпомощь', group: 'Соцсфера', weight: .11, description: '100 — норматив поликлиник на жителя выполнен.' },
-  { code: 'B1', name: 'Безопасность улиц', group: 'Безопасность', weight: .09, description: '100 — освещение и камеры везде, минимум происшествий.' },
-  { code: 'B2', name: 'Безопасность дорог', group: 'Безопасность', weight: .09, description: '100 — минимум ДТП с пострадавшими.' },
-  { code: 'C1', name: 'Надёжность ЖКХ', group: 'Сервисы', weight: .10, description: '100 — нет аварий отопления и водоснабжения за год.' },
-  { code: 'C2', name: 'Обращения жителей', group: 'Сервисы', weight: .10, description: '100 — все обращения закрываются в срок.' }
-];
+import { translate } from './i18n.js';
 
-export const DISTRICTS = [
-  { id: 'esil', name: 'Есиль', population: .27, profile: 'Сильная инфраструктура, нагрузка на мосты и школы.', values: [45, 62, 68, 72, 48, 55, 78, 60, 75, 70] },
-  { id: 'almaty', name: 'Алматы', population: .24, profile: 'Старый жилой фонд и пробки.', values: [40, 75, 50, 55, 60, 65, 62, 52, 50, 60] },
-  { id: 'saryarka', name: 'Сарыарка', population: .20, profile: 'Смог частного сектора и дефицит зелени.', values: [50, 70, 42, 40, 62, 68, 58, 55, 45, 55] },
-  { id: 'baikonur', name: 'Байконур', population: .13, profile: 'Сбалансированный район без резких провалов.', values: [52, 68, 55, 50, 58, 60, 52, 58, 55, 58] },
-  { id: 'nura', name: 'Нура', population: .16, profile: 'Самый слабый район по соцсфере и транспорту.', values: [55, 40, 45, 65, 38, 35, 55, 50, 60, 50] }
-];
+// The API catalog supplies all simulation data and numerical rules. These maps
+// only adapt API identifiers to the existing geometry and presentation labels.
+const groupLabels = { transport: 'Транспорт', ecology: 'Экология', social: 'Соцсфера', safety: 'Безопасность', services: 'Сервисы' };
+const indicatorDirections = { T: 'transport', E: 'ecology', S: 'social', B: 'safety', C: 'services' };
+export const toUiDistrictId = id => id === 'yesil' ? 'esil' : id;
+export const toApiDistrictId = id => id === 'esil' ? 'yesil' : id;
 
-export const MEASURES = [
-  { id: 'M1', group: 'Транспорт', name: 'Выделенные полосы для автобусов', scope: 'district', cost: 18, lag: 2, effects: { T1: 6, T2: 9 } },
-  { id: 'M2', group: 'Транспорт', name: 'Умные светофоры', scope: 'city', cost: 22, lag: 2, effects: { T1: 4, B2: 3 } },
-  { id: 'M3', group: 'Транспорт', name: 'Линия ЛРТ / расширение', scope: 'district', cost: 30, lag: 4, effects: { T1: 16, T2: 20, E2: 4 } },
-  { id: 'M4', group: 'Экология', name: 'Парк / сквер', scope: 'district', cost: 15, lag: 2, effects: { E1: 12, E2: 3, B1: 2 } },
-  { id: 'M5', group: 'Экология', name: 'Чистое топливо для частного сектора', scope: 'district', cost: 25, lag: 3, effects: { E2: 14, C1: 4 } },
-  { id: 'M6', group: 'Экология', name: 'Городская программа озеленения', scope: 'city', cost: 20, lag: 4, effects: { E1: 5, E2: 3 } },
-  { id: 'M7', group: 'Соцсфера', name: 'Школа + детсад', scope: 'district', cost: 24, lag: 3, effects: { S1: 16 } },
-  { id: 'M8', group: 'Соцсфера', name: 'Центр семейного здоровья', scope: 'district', cost: 20, lag: 3, effects: { S2: 14 } },
-  { id: 'M9', group: 'Соцсфера', name: 'Дворовые спорт-хабы', scope: 'district', cost: 10, lag: 1, effects: { S1: 3, S2: 3, B1: 3 } },
-  { id: 'M10', group: 'Безопасность', name: 'Освещение и камеры Safe City', scope: 'district', cost: 12, lag: 1, effects: { B1: 12, B2: 2 } },
-  { id: 'M11', group: 'Безопасность', name: 'Безопасные переходы', scope: 'district', cost: 10, lag: 1, effects: { B2: 12, T1: -2 } },
-  { id: 'M12', group: 'Сервисы', name: 'Платформа обращений жителей', scope: 'city', cost: 14, lag: 1, effects: { C2: 5 } },
-  { id: 'M13', group: 'Сервисы', name: 'Модернизация тепло- и водосетей', scope: 'district', cost: 28, lag: 4, effects: { C1: 18, E2: 2 } },
-  { id: 'M14', group: 'Сервисы', name: 'Аварийные бригады ЖКХ', scope: 'city', cost: 16, lag: 1, effects: { C1: 5, C2: 2 } }
-];
+export let INDICATORS = [];
+export let DISTRICTS = [];
+export let MEASURES = [];
+export let BUDGET = 0;
+export let HORIZON = 0;
+export let REQUIRED_DECISIONS = 0;
+export let MODEL_VERSION = null;
+export let RULES = null;
+export let BASELINE = null;
+export let PRESETS = [];
+let byCode = {};
+let byMeasure = {};
 
-export const BUDGET = 100;
-export const HORIZON = 8;
-const byCode = Object.fromEntries(INDICATORS.map((indicator, index) => [indicator.code, index]));
-const byMeasure = Object.fromEntries(MEASURES.map(measure => [measure.id, measure]));
-const clip = value => Math.max(0, Math.min(100, value));
-const districtScore = values => values.reduce((sum, value, index) => sum + value * INDICATORS[index].weight, 0);
+function freeze(value) {
+  if (value && typeof value === 'object') {
+    Object.values(value).forEach(freeze);
+    Object.freeze(value);
+  }
+  return value;
+}
+function requireCatalog() {
+  if (!RULES) throw Object.assign(new Error('Catalog has not been loaded'), { code: 'CATALOG_NOT_READY' });
+}
+function invalidCatalog() {
+  return Object.assign(new Error('The server catalog is incomplete'), { code: 'INVALID_CATALOG' });
+}
+
+export function configureCatalog(catalog) {
+  const data = structuredClone(catalog);
+  const rules = data?.rules;
+  const numericRules = ['budget_limit', 'required_decisions', 'max_per_direction', 'horizon_quarters', 'critical_threshold', 'critical_penalty', 'average_weight', 'minimum_weight'];
+  if (!data?.model_version || !Array.isArray(data.districts) || !data.districts.length || !Array.isArray(data.measures) || !data.measures.length ||
+      !rules || !numericRules.every(key => Number.isFinite(rules[key])) || rules.horizon_quarters <= 0 || rules.required_decisions < 1 ||
+      !rules.indicator_weights || !Object.keys(rules.indicator_weights).length || !Array.isArray(rules.conflicts) || !Array.isArray(rules.synergies)) throw invalidCatalog();
+  const indicators = Object.entries(rules.indicator_weights).map(([code, weight]) => ({ code, weight, group: groupLabels[indicatorDirections[code[0]]] }));
+  const districts = data.districts.map(district => ({
+    id: toUiDistrictId(district.id), apiId: district.id, name: district.name,
+    population: district.population_share, values: indicators.map(indicator => district.indicators?.[indicator.code])
+  }));
+  const measures = data.measures.map(measure => ({ ...measure, name: measure.title, group: groupLabels[measure.direction] }));
+  if (indicators.some(indicator => !Number.isFinite(indicator.weight) || !indicator.group) ||
+      districts.some(district => !district.id || !Number.isFinite(district.population) || district.values.some(value => !Number.isFinite(value))) ||
+      measures.some(measure => !measure.id || !measure.group || !['city', 'district'].includes(measure.scope) || !Number.isFinite(measure.cost) || !Number.isFinite(measure.lag) || !measure.effects || Object.entries(measure.effects).some(([code, value]) => !Object.hasOwn(rules.indicator_weights, code) || !Number.isFinite(value))) ||
+      new Set(districts.map(d => d.id)).size !== districts.length || new Set(measures.map(m => m.id)).size !== measures.length) throw invalidCatalog();
+
+  INDICATORS = freeze(indicators);
+  DISTRICTS = freeze(districts);
+  MEASURES = freeze(measures);
+  RULES = freeze(rules);
+  BUDGET = rules.budget_limit;
+  HORIZON = rules.horizon_quarters;
+  REQUIRED_DECISIONS = rules.required_decisions;
+  MODEL_VERSION = data.model_version;
+  byCode = Object.fromEntries(INDICATORS.map((indicator, index) => [indicator.code, index]));
+  byMeasure = Object.fromEntries(MEASURES.map(measure => [measure.id, measure]));
+  PRESETS = freeze((data.presets || []).map(preset => ({ ...preset, decisions: preset.selections.map(selection => ({ id: selection.measure_id, ...(selection.district_id ? { districtId: toUiDistrictId(selection.district_id) } : {}) })) })));
+  BASELINE = freeze(data.baseline ? fromServerSnapshot(data.baseline) : calculate());
+  return BASELINE;
+}
 
 const issue = (key, params = {}) => ({ key: `errors.${key}`, params });
 
 export function getAdditionIssue(decisions, id, districtId) {
+  requireCatalog();
   const measure = byMeasure[id];
-  if (!measure) return issue('unknown');
+  if (!measure || decisions.some(decision => !byMeasure[decision.id])) return issue('unknown');
   if (decisions.some(decision => decision.id === id)) return issue('duplicate');
-  if (decisions.length >= 5) return issue('limit');
+  if (decisions.length >= REQUIRED_DECISIONS) return issue('limit', { count: REQUIRED_DECISIONS });
   if (measure.scope === 'district' && !DISTRICTS.some(district => district.id === districtId)) return issue('districtRequired');
   if (measure.scope === 'city' && districtId) return issue('cityOnly');
-  if (decisions.reduce((sum, decision) => sum + byMeasure[decision.id].cost, 0) + measure.cost > BUDGET) return issue('budget');
-  if (decisions.filter(decision => byMeasure[decision.id].group === measure.group).length >= 2) return issue('groupLimit');
-  if ((id === 'M1' && decisions.some(d => d.id === 'M3')) || (id === 'M3' && decisions.some(d => d.id === 'M1'))) return issue('incompatible');
-  for (const [a, b] of [['M4', 'M7'], ['M5', 'M13']]) {
-    if ((id === a || id === b) && decisions.some(d => d.id === (id === a ? b : a) && d.districtId === districtId)) return issue('districtConflict', { first: a, second: b });
+  if (decisions.reduce((sum, decision) => sum + byMeasure[decision.id].cost, 0) + measure.cost > BUDGET) return issue('budget', { budget: BUDGET });
+  if (decisions.filter(decision => byMeasure[decision.id].direction === measure.direction).length >= RULES.max_per_direction) return issue('groupLimit', { count: RULES.max_per_direction });
+  for (const conflict of RULES.conflicts) {
+    const first = conflict.first_measure_id, second = conflict.second_measure_id;
+    if (id !== first && id !== second) continue;
+    const other = decisions.find(decision => decision.id === (id === first ? second : first));
+    if (other && (conflict.scope === 'global' || other.districtId === districtId)) {
+      return issue(conflict.scope === 'global' ? 'incompatible' : 'districtConflict', { first, second });
+    }
   }
   return null;
 }
 
 export function getScenarioIssue(decisions) {
-  if (decisions.length !== 5) return issue('count');
+  requireCatalog();
+  if (decisions.length !== REQUIRED_DECISIONS) return issue('count', { count: REQUIRED_DECISIONS });
   const accepted = [];
   for (const decision of decisions) {
     const error = getAdditionIssue(accepted, decision.id, decision.districtId || null);
@@ -72,50 +102,33 @@ export function getScenarioIssue(decisions) {
   return null;
 }
 
-const russianIssueMessages = {
-  'errors.unknown': 'Мероприятие не найдено.',
-  'errors.duplicate': 'Это мероприятие уже выбрано.',
-  'errors.limit': 'Можно принять ровно 5 решений.',
-  'errors.districtRequired': 'Перетащите меру на район.',
-  'errors.cityOnly': 'Эта мера применяется ко всему городу.',
-  'errors.budget': 'Бюджет 100 ед. будет превышен.',
-  'errors.groupLimit': 'Не более двух мер из одного направления.',
-  'errors.incompatible': 'M1 и M3 несовместимы.',
-  'errors.count': 'Выберите ровно 5 мероприятий.'
-};
+// Compatibility helpers for callers that still expect a Russian message.
+const russianMessage = error => error ? translate(error.key, error.params, 'ru') : null;
+export const validateAddition = (decisions, id, districtId) => russianMessage(getAdditionIssue(decisions, id, districtId));
+export const validateScenario = decisions => russianMessage(getScenarioIssue(decisions));
 
-function russianIssueMessage(error) {
-  if (!error) return null;
-  if (error.key === 'errors.districtConflict') return `${error.params.first} и ${error.params.second} нельзя применить в одном районе.`;
-  return russianIssueMessages[error.key];
-}
-
-export function validateAddition(decisions, id, districtId) {
-  return russianIssueMessage(getAdditionIssue(decisions, id, districtId));
-}
-
-export function validateScenario(decisions) {
-  return russianIssueMessage(getScenarioIssue(decisions));
-}
+const clip = value => Math.max(0, Math.min(100, value));
+const districtScore = values => values.reduce((sum, value, index) => sum + value * INDICATORS[index].weight, 0);
 
 export function calculate(decisions = []) {
+  requireCatalog();
   const districts = DISTRICTS.map(district => ({ ...district, values: [...district.values] }));
-  for (const decision of decisions) {
+  // Match backend summation order, independently of the order of UI interactions.
+  const ordered = [...decisions].sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+  for (const decision of ordered) {
     const measure = byMeasure[decision.id];
     if (!measure) continue;
     const targets = measure.scope === 'city' ? districts : districts.filter(district => district.id === decision.districtId);
     for (const target of targets) {
-      for (const [code, effect] of Object.entries(measure.effects)) {
-        target.values[byCode[code]] += effect * (HORIZON - measure.lag) / HORIZON;
-      }
+      for (const [code, effect] of Object.entries(measure.effects)) target.values[byCode[code]] += effect * (HORIZON - measure.lag) / HORIZON;
     }
   }
-  const has = id => decisions.some(decision => decision.id === id);
-  for (const [first, second, code, bonus] of [['M1', 'M2', 'T1', 2], ['M10', 'M12', 'B1', 2], ['M5', 'M6', 'E2', 2]]) {
-    if (has(first) && has(second)) {
-      const district = districts.find(item => item.id === decisions.find(decision => decision.id === first).districtId);
-      if (district) district.values[byCode[code]] += bonus;
-    }
+  const selected = new Map(ordered.map(decision => [decision.id, decision]));
+  for (const synergy of RULES.synergies) {
+    const first = selected.get(synergy.first_measure_id);
+    if (!first || !selected.has(synergy.second_measure_id)) continue;
+    const district = districts.find(item => item.id === first.districtId);
+    if (district) district.values[byCode[synergy.indicator]] += synergy.bonus;
   }
   for (const district of districts) {
     district.values = district.values.map(clip);
@@ -124,8 +137,24 @@ export function calculate(decisions = []) {
   }
   const average = districts.reduce((sum, district) => sum + district.population * district.score, 0);
   const weakest = Math.min(...districts.map(district => district.score));
-  const critical = districts.reduce((sum, district) => sum + district.values.filter(value => value < 40).length, 0);
-  return { districts, average, weakest, critical, score: .7 * average + .3 * weakest - critical, spent: decisions.reduce((sum, decision) => sum + (byMeasure[decision.id]?.cost || 0), 0) };
+  const critical = districts.reduce((sum, district) => sum + district.values.filter(value => value < RULES.critical_threshold).length, 0);
+  return { districts, average, weakest, critical, score: RULES.average_weight * average + RULES.minimum_weight * weakest - RULES.critical_penalty * critical, spent: decisions.reduce((sum, decision) => sum + (byMeasure[decision.id]?.cost || 0), 0) };
 }
 
-export const BASELINE = calculate();
+export function toSelections(decisions) {
+  requireCatalog();
+  return decisions.map(decision => ({ measure_id: decision.id, ...(decision.districtId ? { district_id: toApiDistrictId(decision.districtId) } : {}) }));
+}
+
+export function fromServerSnapshot(snapshot, spent = 0) {
+  requireCatalog();
+  if (!snapshot || !['score', 'average', 'minimum'].every(key => Number.isFinite(snapshot[key])) || !Array.isArray(snapshot.districts) || !Array.isArray(snapshot.critical_pairs)) throw invalidCatalog();
+  const serverDistricts = new Map(snapshot.districts.map(district => [toUiDistrictId(district.id), district]));
+  const districts = DISTRICTS.map(district => {
+    const source = serverDistricts.get(district.id);
+    const values = INDICATORS.map(indicator => source?.indicators?.[indicator.code]);
+    if (!Number.isFinite(source?.district_score) || values.some(value => !Number.isFinite(value))) throw invalidCatalog();
+    return { ...district, values, score: source.district_score, baselineScore: districtScore(district.values) };
+  });
+  return { districts, score: snapshot.score, average: snapshot.average, weakest: snapshot.minimum, critical: snapshot.critical_pairs.length, spent };
+}

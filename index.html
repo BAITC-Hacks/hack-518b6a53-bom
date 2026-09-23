@@ -9,6 +9,7 @@
 </head>
 <body>
   <div class="app-shell">
+    <div class="startup-status" id="startupStatus" role="status"><p id="startupMessage"></p><button type="button" id="retryCatalog" class="retry-button hidden" data-i18n="network.retry">Повторить</button></div>
     <main class="workspace" id="planningView">
       <div class="language-switcher map-language" role="group" aria-label="Язык интерфейса" data-i18n-aria="ui.language">
         <button type="button" data-language="ru" lang="ru" title="Русский" aria-label="Русский" aria-pressed="true">RU</button>
@@ -43,16 +44,16 @@
           <section class="pulse" id="pulse" aria-label="Пульс города" data-i18n-aria="ui.cityPulse">
             <button id="orbButton" class="orb-button" type="button" aria-label="Открыть показатели" aria-expanded="false" aria-controls="indicatorPanel"><span class="orb-color"></span><span class="orb-close">×</span></button>
             <div class="pulse-content" id="pulseContent" inert>
-              <div class="pulse-head"><span id="orbScope">Астана</span><strong id="orbScore">52.56</strong><small id="orbChange">из 100</small></div>
+              <div class="pulse-head"><span id="orbScope">Астана</span><strong id="orbScore">—</strong><small id="orbChange">из 100</small></div>
               <div class="indicator-panel" id="indicatorPanel"></div>
             </div>
           </section>
         </div>
         <aside class="plan panel">
           <div class="plan-top"><h2><span data-i18n="ui.scenario">Сценарий</span><span class="count-pill" id="decisionCount">0 / 5</span></h2></div>
-          <div class="budget-block"><div class="budget-line"><span data-i18n="ui.budget">Бюджет</span><strong><span id="spentValue">0</span><small> / 100</small></strong></div><div class="budget-track"><span id="budgetFill"></span></div><div class="budget-left"><span data-i18n="ui.available">Доступно</span><strong id="remainingValue">100 ед.</strong></div></div>
+          <div class="budget-block"><div class="budget-line"><span data-i18n="ui.budget">Бюджет</span><strong><span id="spentValue">0</span><small id="budgetLimit"> / 100</small></strong></div><div class="budget-track"><span id="budgetFill"></span></div><div class="budget-left"><span data-i18n="ui.available">Доступно</span><strong id="remainingValue">100 ед.</strong></div></div>
           <div class="decision-list" id="decisionList"></div>
-          <div class="plan-bottom"><div class="status-message" id="statusMessage" aria-live="polite"></div><button class="calculate-button" id="calculateButton" type="button" disabled><span data-i18n="ui.calculate">Рассчитать</span></button></div>
+          <div class="plan-bottom"><div class="status-message" id="statusMessage" aria-live="polite"></div><button type="button" class="retry-button hidden" id="retryValidation" data-i18n="network.retry">Повторить</button><button class="calculate-button" id="calculateButton" type="button" disabled><span data-i18n="ui.calculate">Рассчитать</span></button></div>
         </aside>
       </div>
     </main>

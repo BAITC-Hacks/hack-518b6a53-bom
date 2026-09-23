@@ -11,7 +11,7 @@ from backend.domain.models import Selection
 from backend.services.explanations import ExplanationService
 from backend.services.scenarios import InvalidScenario, ModelVersionMismatch, ScenarioService
 from shared.schemas import (
-    AIHealthResponse, CatalogResponse, ErrorResponse, EvaluateResponse, ExplainResponse, LiveHealthResponse,
+    AIHealthResponse, CatalogResponse, ErrorResponse, EvaluateResponse, ExplainRequest, ExplainResponse, LiveHealthResponse,
     ReadyHealthResponse, ScenarioRequest, ValidateResponse,
 )
 
@@ -109,11 +109,11 @@ def evaluate(body: ScenarioRequest, service: ScenarioService | JSONResponse = De
 
 
 @router.post("/api/v1/explain", response_model=ExplainResponse)
-async def explain(body: ScenarioRequest, service: ExplanationService | JSONResponse = Depends(explanation_service)) -> Any:
+async def explain(body: ExplainRequest, service: ExplanationService | JSONResponse = Depends(explanation_service)) -> Any:
     if isinstance(service, JSONResponse):
         return service
     try:
-        return await service.explain(body.model_version, _selections(body))
+        return await service.explain(body.model_version, _selections(body), body.language)
     except ModelVersionMismatch:
         return error_response(409, "MODEL_VERSION_MISMATCH", "Неизвестная версия модели", "model_version")
     except InvalidScenario as exc:

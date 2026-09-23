@@ -1,4 +1,6 @@
 .git
+node_modules/
+*.log
 .env
 .env.*
 !.env.example
@@ -15,4 +17,5 @@ build/
 .coverage
 coverage/
 test-dbarin.txt
+legal
 docs/
