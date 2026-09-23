@@ -4,10 +4,11 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from openai import AsyncOpenAI
+from starlette.exceptions import HTTPException
 
 from backend.adapters.dataset import load_dataset
 from backend.adapters.llm import OpenAIExplanationAdapter
@@ -84,6 +85,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.scenario_service = None
     app.state.explanation_service = None
     settings = load_settings()
+    logging.basicConfig(level=settings.log_level)
+    logging.getLogger().setLevel(settings.log_level)
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        logging.getLogger(name).setLevel(settings.log_level)
     client = (
         AsyncOpenAI(
             api_key=settings.openai_api_key,
@@ -138,4 +143,7 @@ async def internal_error(request: Request, exc: Exception) -> JSONResponse:
 
 @app.exception_handler(HTTPException)
 async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
-    return error_response(exc.status_code, "HTTP_ERROR", "Запрос не может быть обработан")
+    response = error_response(exc.status_code, "HTTP_ERROR", "Запрос не может быть обработан")
+    if exc.headers:
+        response.headers.update(exc.headers)
+    return response

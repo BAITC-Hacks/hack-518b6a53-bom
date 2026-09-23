@@ -29,9 +29,12 @@ class Settings:
 
 def load_settings() -> Settings:
     """Read process environment without requiring OpenAI configuration."""
+    log_level = os.getenv("LOG_LEVEL", "INFO").strip().upper()
+    if log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+        raise ValueError("LOG_LEVEL must be DEBUG, INFO, WARNING, ERROR or CRITICAL")
     return Settings(
         data_dir=Path(os.getenv("DATA_DIR", "/app/data/tech2-v1")),
-        log_level=os.getenv("LOG_LEVEL", "INFO"),
+        log_level=log_level,
         openai_api_key=os.getenv("OPENAI_API_KEY") or None,
         openai_model=os.getenv("OPENAI_MODEL") or None,
         openai_timeout_seconds=_positive_int("OPENAI_TIMEOUT_SECONDS", 45),
