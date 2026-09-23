@@ -136,7 +136,7 @@ docker compose --env-file .env.local run --rm --no-deps -v .:/workspace:ro -w /w
 docker compose --env-file .env.local -f compose.yaml -f compose.dev.yaml run --rm --no-deps -v ./tests:/app/tests:ro api python -m unittest discover -s tests -p test_backend.py -v
 ```
 
-Проходят **41 JavaScript-тест и 25 Python-тестов**: расчёты и ограничения, переводы, API-контракты, область AI-объяснения, fallback и отмена запроса при отключении клиента.
+Проходят **41 JavaScript-тест и 29 Python-тестов**: расчёты и ограничения, переводы, API-контракты, полнота рассчитанных вкладов и дельт в AI-контексте, область AI-объяснения, fallback и отмена запроса при отключении клиента.
 
 Для сверки браузерной модели с работающим API сначала выполните обычную команду запуска из раздела «Запуск», затем:
 
@@ -150,6 +150,6 @@ docker compose --env-file .env.local run --rm --no-deps -v .:/workspace:ro -w /w
 
 [ТЗ и критерии оценки](data_2_1.md) — [Данные и правила кейса](data.md) — [Требования к README](docs/README_PROMPT_EXAMPLE.md).
 
-Исходные материалы: [ТЗ в Google Docs](https://docs.google.com/document/d/1Uc-GdGoKhDY-spu8V50-ZMm33t2CjYLP/preview) и [датасет в Google Docs](https://docs.google.com/document/d/1oDZtYnBgbcn_Ii7vleP87hkARJ2HmbXl7Cw_rsCxqpo/preview).
+Исходные материалы: [ТЗ в Google Docs](https://docs.google.com/document/d/1oDZtYnBgbcn_Ii7vleP87hkARJ2HmbXl7Cw_rsCxqpo/preview) и [датасет в Google Docs](https://docs.google.com/document/d/1Uc-GdGoKhDY-spu8V50-ZMm33t2CjYLP/preview).
 
 Геометрия в [frontend/map-geometry.js](frontend/map-geometry.js) адаптирована по [Astana districts coloured 2023.png](https://commons.wikimedia.org/wiki/File:Astana_districts_coloured_2023.png), автор **Bogomolov.PL**, лицензия [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Уведомление относится только к геометрии карты.

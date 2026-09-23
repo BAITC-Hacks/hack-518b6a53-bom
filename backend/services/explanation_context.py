@@ -17,7 +17,7 @@ INDICATOR_NAMES = {
 def build_ai_context(
     report: ScenarioReport, dataset: Dataset, district_id: str | None = None,
 ) -> dict[str, Any]:
-    """Round only presentation facts; keep the authoritative report untouched."""
+    """Keep exact contributions and deltas; round only the short summaries."""
     if report.model_version != dataset.model_version:
         raise ValueError("Report and dataset model versions differ")
     if district_id is not None and district_id not in dataset.districts:
@@ -26,6 +26,10 @@ def build_ai_context(
     after = {district.id: district for district in report.after.districts}
     relevant = [change for change in report.indicator_changes
                 if district_id is None or change.district_id == district_id]
+    indicator_deltas: dict[str, dict[str, float]] = {}
+    for change in relevant:
+        if change.delta != 0:
+            indicator_deltas.setdefault(change.district_id, {})[change.indicator] = change.delta
 
     def change_fact(change) -> dict[str, Any]:
         return {
@@ -56,6 +60,7 @@ def build_ai_context(
         "horizon_quarters": dataset.rules.horizon_quarters,
         "city_budget": {"limit": report.budget.limit, "spent": report.budget.spent},
         "before": before_score, "after": after_score, "score_delta": round(raw_delta, 2),
+        "indicator_deltas": indicator_deltas,
         "top_changes": [change_fact(change) for change in sorted(
             relevant, key=lambda item: abs(item.delta), reverse=True,
         )[:4]],
@@ -65,6 +70,16 @@ def build_ai_context(
              "district_id": selection.district_id, "lag": dataset.measures[selection.measure_id].lag}
             for selection in report.selections
             if district_id is None or selection.district_id in (None, district_id)
+        ],
+        "measure_effects": [
+            {"measure_id": effect.measure_id, "district_id": effect.district_id,
+             "cost": effect.cost, "lag": effect.lag, "realized_fraction": effect.realized_fraction,
+             "additions": {
+                 target: dict(additions) for target, additions in effect.additions.items()
+                 if district_id is None or target == district_id
+             }}
+            for effect in report.measure_effects
+            if district_id is None or effect.district_id in (None, district_id)
         ],
         "synergies": [
             {"measures": [effect.first_measure_id, effect.second_measure_id],
@@ -89,7 +104,8 @@ def build_ai_context(
     if district_id is None:
         context["districts"] = [
             {"id": identifier, "name": dataset.districts[identifier].name,
-             "before": round(before[identifier].district_score, 2), "after": round(district.district_score, 2)}
+             "before": round(before[identifier].district_score, 2), "after": round(district.district_score, 2),
+             "delta": district.district_score - before[identifier].district_score}
             for identifier, district in after.items()
         ]
     else:

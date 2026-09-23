@@ -125,6 +125,66 @@ class CompactContextTests(unittest.TestCase):
         self.assertEqual(len(context["recommendation_catalog"]), 14)
         self.assertLess(len(json.dumps(context, ensure_ascii=False)), 7000)
 
+    def test_city_context_keeps_every_nonzero_delta_including_city_measure(self):
+        context = build_ai_context(self.report, self.service.dataset)
+        expected = {
+            (change.district_id, change.indicator): change.delta
+            for change in self.report.indicator_changes if change.delta != 0
+        }
+        actual = {
+            (district_id, indicator): delta
+            for district_id, indicators in context["indicator_deltas"].items()
+            for indicator, delta in indicators.items()
+        }
+        self.assertEqual(actual, expected)
+        for district_id in self.service.dataset.districts:
+            self.assertEqual(actual[(district_id, "C2")], 4.375)
+        effects = {item["measure_id"]: item for item in context["measure_effects"]}
+        self.assertEqual(set(effects), {selection.measure_id for selection in self.report.selections})
+        self.assertEqual(effects["M12"]["cost"], 14)
+        self.assertEqual(effects["M12"]["realized_fraction"], 0.875)
+        self.assertEqual(effects["M12"]["additions"], {
+            district_id: {"C2": 4.375} for district_id in self.service.dataset.districts
+        })
+
+    def test_all_precomputed_measure_contributions_and_district_deltas_are_forwarded(self):
+        context = build_ai_context(self.report, self.service.dataset)
+        for supplied, calculated in zip(context["measure_effects"], self.report.measure_effects):
+            self.assertEqual(supplied, {
+                "measure_id": calculated.measure_id, "district_id": calculated.district_id,
+                "cost": calculated.cost, "lag": calculated.lag,
+                "realized_fraction": calculated.realized_fraction,
+                "additions": {target: dict(values) for target, values in calculated.additions.items()},
+            })
+        before = {district.id: district.district_score for district in self.report.baseline.districts}
+        after = {district.id: district.district_score for district in self.report.after.districts}
+        self.assertEqual({district["id"]: district["delta"] for district in context["districts"]}, {
+            identifier: score - before[identifier] for identifier, score in after.items()
+        })
+
+    def test_negative_measure_effect_remains_visible_to_ai(self):
+        report = self.service.evaluate(
+            self.service.dataset.model_version, self.service.dataset.presets[1].selections,
+        )
+        context = build_ai_context(report, self.service.dataset)
+        m11 = next(item for item in context["measure_effects"] if item["measure_id"] == "M11")
+        self.assertEqual(m11["realized_fraction"], 0.875)
+        self.assertEqual(m11["additions"], {"nura": {"B2": 10.5, "T1": -1.75}})
+        self.assertEqual(context["indicator_deltas"]["nura"]["T1"], -1.75)
+
+    def test_district_filters_ready_measure_effects_and_city_additions(self):
+        context = build_ai_context(self.report, self.service.dataset, "nura")
+        self.assertEqual(set(context["indicator_deltas"]), {"nura"})
+        self.assertEqual(context["indicator_deltas"]["nura"]["C2"], 4.375)
+        self.assertEqual({effect["measure_id"] for effect in context["measure_effects"]}, {
+            "M7", "M8", "M10", "M12",
+        })
+        for effect in context["measure_effects"]:
+            self.assertEqual(set(effect["additions"]), {"nura"})
+        m12 = next(effect for effect in context["measure_effects"] if effect["measure_id"] == "M12")
+        self.assertIsNone(m12["district_id"])
+        self.assertEqual(m12["additions"], {"nura": {"C2": 4.375}})
+
 
 class SchemaTests(unittest.TestCase):
     def setUp(self):
