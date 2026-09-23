@@ -10,15 +10,16 @@ def validate_scenario(
 ) -> ValidationResult:
     """Check all rules that can be determined from the supplied selections.
 
-    An unknown measure makes the total cost unavailable. Every known selection,
-    including a duplicate, contributes its cost exactly once otherwise.
+    An unknown measure or district makes the total cost unavailable. Every
+    known selection, including a duplicate, contributes its cost exactly once
+    when all IDs are known.
     """
     rules = dataset.rules
     errors: list[ValidationError] = []
     by_measure: dict[str, list[Selection]] = defaultdict(list)
     directions: Counter[str] = Counter()
     spent = 0
-    unknown_measure = False
+    unknown_id = False
     seen_measures: set[str] = set()
 
     # Check IDs independently: even an unknown measure can carry a bad district.
@@ -27,7 +28,7 @@ def validate_scenario(
         district_id = selection.district_id
         measure = dataset.measures.get(measure_id)
         if measure is None:
-            unknown_measure = True
+            unknown_id = True
             errors.append(ValidationError(
                 "UNKNOWN_MEASURE", f"Неизвестное мероприятие: {measure_id}",
                 f"selections[{index}].measure_id",
@@ -38,6 +39,7 @@ def validate_scenario(
             by_measure[measure_id].append(selection)
 
         if district_id is not None and district_id not in dataset.districts:
+            unknown_id = True
             errors.append(ValidationError(
                 "UNKNOWN_DISTRICT", f"Неизвестный район: {district_id}",
                 f"selections[{index}].district_id",
@@ -73,12 +75,12 @@ def validate_scenario(
 
     budget = Budget(
         limit=rules.budget_limit,
-        spent=None if unknown_measure else spent,
-        remaining=None if unknown_measure else rules.budget_limit - spent,
+        spent=None if unknown_id else spent,
+        remaining=None if unknown_id else rules.budget_limit - spent,
     )
     if spent > rules.budget_limit:
         cost_message = (f"Известные мероприятия стоят не менее {spent}"
-                        if unknown_measure else f"Стоимость {spent}")
+                        if unknown_id else f"Стоимость {spent}")
         errors.append(ValidationError(
             "BUDGET_EXCEEDED", f"{cost_message} при бюджете {rules.budget_limit}",
             "selections",
