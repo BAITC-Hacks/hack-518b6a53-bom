@@ -11,35 +11,36 @@
   <div class="app-shell">
     <main class="workspace" id="planningView">
       <aside class="catalog panel">
-        <div class="panel-heading"><h1>Мероприятия</h1><span class="subtle-count">14</span></div>
+        <div class="panel-heading"><h1 data-i18n="ui.measures">Мероприятия</h1><span class="subtle-count">14</span></div>
         <div class="catalog-tools">
-          <label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="searchInput" type="search" placeholder="Поиск" aria-label="Поиск мероприятия"></label>
-          <div class="filter-row" id="filterRow" aria-label="Направления">
-            <button class="filter-chip active" data-filter="Все" type="button">Все</button>
-            <button class="filter-chip" data-filter="Транспорт" type="button">Транспорт</button>
-            <button class="filter-chip" data-filter="Экология" type="button">Экология</button>
-            <button class="filter-chip" data-filter="Соцсфера" type="button">Соцсфера</button>
-            <button class="filter-chip" data-filter="Безопасность" type="button">Безопасность</button>
-            <button class="filter-chip" data-filter="Сервисы" type="button">Сервисы</button>
+          <div class="filter-row" id="filterRow" aria-label="Направления" data-i18n-aria="ui.categories">
+            <button class="filter-chip active" data-filter="Все" type="button" aria-label="Все" data-i18n-aria="groups.all" aria-pressed="true" title="Все мероприятия" data-i18n-title="ui.allMeasures"><img src="./svg/all.svg" width="32" height="32" alt=""><span data-i18n="groups.all">Все</span></button>
+            <button class="filter-chip" data-filter="Транспорт" type="button" aria-label="Транспорт" data-i18n-aria="groups.transport" aria-pressed="false" title="Транспорт" data-i18n-title="groups.transport"><img src="./svg/transport.svg" width="32" height="32" alt=""><span data-i18n="groups.transport">Транспорт</span></button>
+            <button class="filter-chip" data-filter="Экология" type="button" aria-label="Экология" data-i18n-aria="groups.ecology" aria-pressed="false" title="Экология" data-i18n-title="groups.ecology"><img src="./svg/ecology.svg" width="32" height="32" alt=""><span data-i18n="groups.ecology">Экология</span></button>
+            <button class="filter-chip" data-filter="Соцсфера" type="button" aria-label="Соцсфера" data-i18n-aria="groups.social" aria-pressed="false" title="Соцсфера" data-i18n-title="groups.social"><img src="./svg/social.svg" width="32" height="32" alt=""><span data-i18n="groups.social">Соцсфера</span></button>
+            <button class="filter-chip" data-filter="Безопасность" type="button" aria-label="Безопасность" data-i18n-aria="groups.security" aria-pressed="false" title="Безопасность" data-i18n-title="groups.security"><img src="./svg/security.svg" width="32" height="32" alt=""><span data-i18n="groups.security">Безопасность</span></button>
+            <button class="filter-chip" data-filter="Сервисы" type="button" aria-label="Сервисы" data-i18n-aria="groups.services" aria-pressed="false" title="Сервисы" data-i18n-title="groups.services"><img src="./svg/services.svg" width="32" height="32" alt=""><span data-i18n="groups.services">Сервисы</span></button>
           </div>
         </div>
         <div class="catalog-list" id="catalogList"></div>
       </aside>
 
-      <section class="map-region" id="mapCard" aria-label="Карта районов Астаны">
-        <div class="map-place"><strong>Астана</strong><span id="mapScope">5 районов</span></div>
-        <div class="map-stage" id="mapStage">
-          <svg id="cityMap" class="city-map" viewBox="0 0 900 700" role="group" aria-label="Изометрическая карта районов Астаны"><g id="mapCamera"></g></svg>
+      <section class="map-region" id="mapCard" aria-label="Карта районов Астаны" data-i18n-aria="ui.mapLabel">
+        <div class="map-place"><strong data-i18n="ui.cityName">Астана</strong><span id="mapScope">5 районов</span></div>
+        <div class="language-switcher map-language" role="group" aria-label="Язык интерфейса" data-i18n-aria="ui.language">
+          <button type="button" data-language="ru" lang="ru" title="Русский" aria-label="Русский" aria-pressed="true">RU</button>
+          <button type="button" data-language="kk" lang="kk" title="Қазақша" aria-label="Қазақша" aria-pressed="false">ҚАЗ</button>
+          <button type="button" data-language="en" lang="en" title="English" aria-label="English" aria-pressed="false">EN</button>
         </div>
-        <div class="map-toolbar"><button id="resetMapButton" class="map-reset" type="button" aria-label="Показать весь город" title="Показать весь город"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg></button><span>8 кварталов</span></div>
-        <button class="city-drop" id="cityDrop" data-city-drop="true" type="button"><span>＋</span> Весь город</button>
-        <div class="map-compass" aria-hidden="true"><span>С</span><svg viewBox="0 0 24 38"><path d="M12 2 21 30 12 24 3 30Z"/><path d="M12 2V24"/></svg></div>
+        <div class="map-stage" id="mapStage">
+          <svg id="cityMap" class="city-map" viewBox="0 0 900 700" role="group" aria-label="Изометрическая карта районов Астаны" data-i18n-aria="ui.mapIsometric"><g id="mapCamera"></g></svg>
+        </div>
         <div class="drop-preview hidden" id="dropPreview" aria-live="polite"></div>
       </section>
 
       <div class="right-rail">
         <div class="pulse-space">
-          <section class="pulse" id="pulse" aria-label="Пульс города">
+          <section class="pulse" id="pulse" aria-label="Пульс города" data-i18n-aria="ui.cityPulse">
             <button id="orbButton" class="orb-button" type="button" aria-label="Открыть показатели" aria-expanded="false" aria-controls="indicatorPanel"><span class="orb-color"></span><span class="orb-close">×</span></button>
             <div class="pulse-content" id="pulseContent" inert>
               <div class="pulse-head"><span id="orbScope">Астана</span><strong id="orbScore">52.56</strong><small id="orbChange">из 100</small></div>
@@ -48,23 +49,30 @@
           </section>
         </div>
         <aside class="plan panel">
-          <div class="plan-top"><h2>Сценарий<span class="count-pill" id="decisionCount">0 / 5</span></h2></div>
-          <div class="budget-block"><div class="budget-line"><span>Бюджет</span><strong><span id="spentValue">0</span><small> / 100</small></strong></div><div class="budget-track"><span id="budgetFill"></span></div><div class="budget-left"><span>Доступно</span><strong id="remainingValue">100 ед.</strong></div></div>
+          <div class="plan-top"><h2><span data-i18n="ui.scenario">Сценарий</span><span class="count-pill" id="decisionCount">0 / 5</span></h2></div>
+          <div class="budget-block"><div class="budget-line"><span data-i18n="ui.budget">Бюджет</span><strong><span id="spentValue">0</span><small> / 100</small></strong></div><div class="budget-track"><span id="budgetFill"></span></div><div class="budget-left"><span data-i18n="ui.available">Доступно</span><strong id="remainingValue">100 ед.</strong></div></div>
           <div class="decision-list" id="decisionList"></div>
-          <div class="plan-bottom"><div class="status-message" id="statusMessage" aria-live="polite"></div><button class="calculate-button" id="calculateButton" type="button" disabled><span>Рассчитать</span><span>↗</span></button></div>
+          <div class="plan-bottom"><div class="status-message" id="statusMessage" aria-live="polite"></div><button class="calculate-button" id="calculateButton" type="button" disabled><span data-i18n="ui.calculate">Рассчитать</span></button></div>
         </aside>
       </div>
     </main>
 
     <main class="report-view hidden" id="reportView">
-      <div class="report-head"><button id="backButton" class="back-button" type="button">← К карте</button><button id="restartButton" class="text-button" type="button">Новый сценарий ↗</button></div>
-      <div class="report-hero"><div><span class="report-kicker">Через 8 кварталов</span><h1>Результат сценария</h1></div><div class="report-score"><span>Качество жизни</span><strong id="reportScore">—</strong><small id="reportDelta">—</small><div>Сейчас <b>52.56</b></div></div></div>
+      <div class="report-head">
+        <button id="backButton" class="back-button" type="button" data-i18n="ui.backToMap">К карте</button>
+        <div class="language-switcher" role="group" aria-label="Язык интерфейса" data-i18n-aria="ui.language">
+          <button type="button" data-language="ru" lang="ru" title="Русский" aria-label="Русский" aria-pressed="true">RU</button>
+          <button type="button" data-language="kk" lang="kk" title="Қазақша" aria-label="Қазақша" aria-pressed="false">ҚАЗ</button>
+          <button type="button" data-language="en" lang="en" title="English" aria-label="English" aria-pressed="false">EN</button>
+        </div>
+        <button id="restartButton" class="text-button" type="button" data-i18n="ui.newScenario">Новый сценарий</button>
+      </div>
+      <div class="report-hero"><div><span class="report-kicker" data-i18n="ui.afterHorizon">Через 8 кварталов</span><h1 data-i18n="ui.resultTitle">Результат сценария</h1></div><div class="report-score"><span data-i18n="ui.qualityOfLife">Качество жизни</span><strong id="reportScore">—</strong><small id="reportDelta">—</small><div><span data-i18n="ui.now">Сейчас</span> <b id="reportBaseline">52.56</b></div></div></div>
       <div class="report-tabs" id="reportTabs"></div>
-      <div class="report-mode" id="reportMode"><button type="button" data-mode="metrics" class="active">Показатели</button><button type="button" data-mode="analysis">Выводы</button></div><div id="reportContent" class="report-content" data-mode="metrics"></div>
+      <div class="report-mode" id="reportMode"><button type="button" data-mode="metrics" class="active" data-i18n="ui.metrics">Показатели</button><button type="button" data-mode="analysis" data-i18n="ui.analysis">Выводы</button></div><div id="reportContent" class="report-content" data-mode="metrics"></div>
     </main>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script type="module" src="./app.js"></script>
 </body>
 </html>
-

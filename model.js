@@ -43,31 +43,59 @@ const byMeasure = Object.fromEntries(MEASURES.map(measure => [measure.id, measur
 const clip = value => Math.max(0, Math.min(100, value));
 const districtScore = values => values.reduce((sum, value, index) => sum + value * INDICATORS[index].weight, 0);
 
-export function validateAddition(decisions, id, districtId) {
+const issue = (key, params = {}) => ({ key: `errors.${key}`, params });
+
+export function getAdditionIssue(decisions, id, districtId) {
   const measure = byMeasure[id];
-  if (!measure) return 'Мероприятие не найдено.';
-  if (decisions.some(decision => decision.id === id)) return 'Это мероприятие уже выбрано.';
-  if (decisions.length >= 5) return 'Можно принять ровно 5 решений.';
-  if (measure.scope === 'district' && !DISTRICTS.some(district => district.id === districtId)) return 'Перетащите меру на район.';
-  if (measure.scope === 'city' && districtId) return 'Эта мера применяется ко всему городу.';
-  if (decisions.reduce((sum, decision) => sum + byMeasure[decision.id].cost, 0) + measure.cost > BUDGET) return 'Бюджет 100 ед. будет превышен.';
-  if (decisions.filter(decision => byMeasure[decision.id].group === measure.group).length >= 2) return 'Не более двух мер из одного направления.';
-  if ((id === 'M1' && decisions.some(d => d.id === 'M3')) || (id === 'M3' && decisions.some(d => d.id === 'M1'))) return 'M1 и M3 несовместимы.';
+  if (!measure) return issue('unknown');
+  if (decisions.some(decision => decision.id === id)) return issue('duplicate');
+  if (decisions.length >= 5) return issue('limit');
+  if (measure.scope === 'district' && !DISTRICTS.some(district => district.id === districtId)) return issue('districtRequired');
+  if (measure.scope === 'city' && districtId) return issue('cityOnly');
+  if (decisions.reduce((sum, decision) => sum + byMeasure[decision.id].cost, 0) + measure.cost > BUDGET) return issue('budget');
+  if (decisions.filter(decision => byMeasure[decision.id].group === measure.group).length >= 2) return issue('groupLimit');
+  if ((id === 'M1' && decisions.some(d => d.id === 'M3')) || (id === 'M3' && decisions.some(d => d.id === 'M1'))) return issue('incompatible');
   for (const [a, b] of [['M4', 'M7'], ['M5', 'M13']]) {
-    if ((id === a || id === b) && decisions.some(d => d.id === (id === a ? b : a) && d.districtId === districtId)) return `${a} и ${b} нельзя применить в одном районе.`;
+    if ((id === a || id === b) && decisions.some(d => d.id === (id === a ? b : a) && d.districtId === districtId)) return issue('districtConflict', { first: a, second: b });
   }
   return null;
 }
 
-export function validateScenario(decisions) {
-  if (decisions.length !== 5) return 'Выберите ровно 5 мероприятий.';
+export function getScenarioIssue(decisions) {
+  if (decisions.length !== 5) return issue('count');
   const accepted = [];
   for (const decision of decisions) {
-    const error = validateAddition(accepted, decision.id, decision.districtId || null);
+    const error = getAdditionIssue(accepted, decision.id, decision.districtId || null);
     if (error) return error;
     accepted.push(decision);
   }
   return null;
+}
+
+const russianIssueMessages = {
+  'errors.unknown': 'Мероприятие не найдено.',
+  'errors.duplicate': 'Это мероприятие уже выбрано.',
+  'errors.limit': 'Можно принять ровно 5 решений.',
+  'errors.districtRequired': 'Перетащите меру на район.',
+  'errors.cityOnly': 'Эта мера применяется ко всему городу.',
+  'errors.budget': 'Бюджет 100 ед. будет превышен.',
+  'errors.groupLimit': 'Не более двух мер из одного направления.',
+  'errors.incompatible': 'M1 и M3 несовместимы.',
+  'errors.count': 'Выберите ровно 5 мероприятий.'
+};
+
+function russianIssueMessage(error) {
+  if (!error) return null;
+  if (error.key === 'errors.districtConflict') return `${error.params.first} и ${error.params.second} нельзя применить в одном районе.`;
+  return russianIssueMessages[error.key];
+}
+
+export function validateAddition(decisions, id, districtId) {
+  return russianIssueMessage(getAdditionIssue(decisions, id, districtId));
+}
+
+export function validateScenario(decisions) {
+  return russianIssueMessage(getScenarioIssue(decisions));
 }
 
 export function calculate(decisions = []) {
