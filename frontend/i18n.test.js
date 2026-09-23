@@ -9,7 +9,7 @@ import {
 } from './i18n.js';
 import { MEASURES, DISTRICTS, INDICATORS, calculate, configureCatalog, getAdditionIssue, getScenarioIssue } from './model.js';
 
-const source = Object.fromEntries(await Promise.all(['districts', 'measures', 'rules', 'presets'].map(async name => [name, JSON.parse(await readFile(new URL(`data/tech2-v1/${name}.json`, import.meta.url), 'utf8'))])));
+const source = Object.fromEntries(await Promise.all(['districts', 'measures', 'rules', 'presets'].map(async name => [name, JSON.parse(await readFile(new URL(`../data/tech2-v1/${name}.json`, import.meta.url), 'utf8'))])));
 const { model_version, ...rules } = source.rules;
 configureCatalog({ model_version, rules, districts: source.districts.districts, measures: source.measures.measures, presets: source.presets.presets });
 

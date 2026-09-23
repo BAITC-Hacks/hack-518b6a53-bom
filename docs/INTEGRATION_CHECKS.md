@@ -1,16 +1,18 @@
 # Проверка интеграции MVP
 
-Фронт взят из `dbarin` на коммите `05f27a0`, включая локализацию, адаптивные объекты, их карточки и разбор вкладов мероприятий. Сервер взят из `david` на коммите `bbc9c3a`. Интеграция находится в ветке `mvp`.
+Фронт взят из `dbarin` на коммите `05f27a0`, включая локализацию, адаптивные объекты, их карточки и разбор вкладов мероприятий. Сервер взят из `david` на коммите `bbc9c3a`. Интеграция находится в ветке `main`; исходники и тесты интерфейса размещены в `frontend/`.
 
 ## Автоматические проверки
 
 Сначала запустите приложение командой из README. Проверки не обращаются к OpenAI.
 
 ```sh
-docker compose run --rm --no-deps -v .:/app:ro ui node --test
+docker compose run --rm --no-deps -v .:/workspace:ro -w /workspace/frontend ui node --test
 docker compose run --rm --no-deps -v ./tests:/app/tests:ro api python -m unittest discover -s tests -p test_backend.py -v
-docker compose run --rm --no-deps -v .:/app:ro ui node tests/parity.mjs http://ui:4173
+docker compose run --rm --no-deps -v .:/workspace:ro -w /workspace ui node tests/parity.mjs http://ui:4173
 ```
+
+Для локального Node.js из корня репозитория: `npm --prefix frontend test` и `npm --prefix frontend run test:parity`. Сервер интерфейса запускается командой `npm --prefix frontend start` и читает `.env.local` из корня репозитория. В контейнере интерфейс сохраняет рабочий каталог `/app` и получает переменные через Compose.
 
 При работе с примонтированными Python-исходниками добавьте `-f compose.yaml -f compose.dev.yaml` перед `run`, чтобы тесты проверяли текущие файлы. Без dev-конфигурации используется собранный образ API: после правок пересоберите его.
 

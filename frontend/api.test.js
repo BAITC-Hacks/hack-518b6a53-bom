@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { configureCatalog } from './model.js';
 import { ApiError, getCatalog, validateScenario, evaluateScenario, explainScenario } from './api.js';
 
-const source = Object.fromEntries(await Promise.all(['districts', 'measures', 'rules', 'presets'].map(async name => [name, JSON.parse(await readFile(new URL(`data/tech2-v1/${name}.json`, import.meta.url), 'utf8'))])));
+const source = Object.fromEntries(await Promise.all(['districts', 'measures', 'rules', 'presets'].map(async name => [name, JSON.parse(await readFile(new URL(`../data/tech2-v1/${name}.json`, import.meta.url), 'utf8'))])));
 const { model_version, ...rules } = source.rules;
 const catalog = { model_version, rules, districts: source.districts.districts, measures: source.measures.measures, presets: source.presets.presets };
 configureCatalog(catalog);

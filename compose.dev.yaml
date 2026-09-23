@@ -1,19 +1,7 @@
 services:
   ui:
     volumes:
-      - ./server.js:/app/server.js:ro
-      - ./package.json:/app/package.json:ro
-      - ./index.html:/app/index.html:ro
-      - ./styles.css:/app/styles.css:ro
-      - ./app.js:/app/app.js:ro
-      - ./api.js:/app/api.js:ro
-      - ./model.js:/app/model.js:ro
-      - ./i18n.js:/app/i18n.js:ro
-      - ./locales.js:/app/locales.js:ro
-      - ./map-geometry.js:/app/map-geometry.js:ro
-      - ./map-objects.js:/app/map-objects.js:ro
-      - ./map-object-art.js:/app/map-object-art.js:ro
-      - ./svg:/app/svg:ro
+      - ./frontend:/app:ro
     command: ["node", "--watch", "server.js"]
 
   api:

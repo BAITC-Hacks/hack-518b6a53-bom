@@ -7,9 +7,7 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
-COPY --chown=node:node package.json server.js index.html styles.css app.js api.js model.js /app/
-COPY --chown=node:node i18n.js locales.js map-geometry.js map-objects.js map-object-art.js /app/
-COPY --chown=node:node svg /app/svg
+COPY --chown=node:node frontend/ /app/
 
 USER node
 EXPOSE 4173

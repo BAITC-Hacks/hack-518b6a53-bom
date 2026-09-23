@@ -136,7 +136,7 @@ export function createUiServer({ apiUrl = 'http://127.0.0.1:8000', proxyTimeoutM
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    process.loadEnvFile(resolve(root, '.env.local'));
+    process.loadEnvFile(resolve(root, '..', '.env.local'));
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }

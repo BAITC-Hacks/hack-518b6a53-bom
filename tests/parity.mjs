@@ -5,7 +5,7 @@ import {
   configureCatalog, calculate, fromServerSnapshot, toSelections, toUiDistrictId,
   INDICATORS, DISTRICTS, MEASURES, RULES, PRESETS, BASELINE, MODEL_VERSION,
   getAdditionIssue, getScenarioIssue
-} from '../model.js';
+} from '../frontend/model.js';
 
 const origin = process.argv[2] || process.env.API_BASE_URL || 'http://localhost:4173';
 const request = async (path, body) => {
